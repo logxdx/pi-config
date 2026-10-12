@@ -1,0 +1,47 @@
+{
+  "defaultProvider": "llamacpp",
+  "defaultModel": "ling3",
+  "lastChangelogVersion": "1.1.0",
+  "terminal": {
+    "showImages": false,
+    "imageWidthCells": 60,
+    "showTerminalProgress": true
+  },
+  "images": {
+    "blockImages": true
+  },
+  "transport": "auto",
+  "httpIdleTimeoutMs": 300000,
+  "cacheWarming": "streaming",
+  "markdown": {
+    "mermaid": "streaming"
+  },
+  "showCacheMissNotices": true,
+  "enableInstallTelemetry": false,
+  "tuiMode": "fullscreen",
+  "theme": "dark",
+  "packages": [
+    "./packages/pi-interactive-subagents",
+    "./packages/pi-observational-memory",
+    "npm:pi-bansos"
+  ],
+  "modelThinkingLevels": {
+    "llamacpp/ling3": "medium"
+  },
+  "observational-memory": {
+    "observerConcurrency": 1,
+    "compactAtContextTokens": 100000,
+    "models": {
+      "observer": {
+        "provider": "llamacpp",
+        "id": "ling3",
+        "thinking": "low"
+      },
+      "consolidator": {
+        "provider": "llamacpp",
+        "id": "ling3",
+        "thinking": "medium"
+      }
+    }
+  }
+}

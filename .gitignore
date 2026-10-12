@@ -1,0 +1,22 @@
+# Credentials & machine-local state
+agent/auth.json
+agent/models-store.json
+agent/trust.json
+agent/*.bak*
+
+# Sessions & runtime data
+agent/sessions/
+**/artifacts/
+
+# Caches written by extensions (pi-bansos model lists, version checks)
+agent/bansos-*.json
+
+# Package installs managed by pi, rebuilt from settings.json "packages"
+agent/git/
+agent/npm/
+
+# Dependencies & build caches
+node_modules/
+.venv/
+__pycache__/
+*.pyc
