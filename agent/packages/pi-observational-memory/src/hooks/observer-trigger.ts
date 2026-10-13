@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { assignObservationTimestamps } from "../ids.js";
+import { resolveModel } from "../config.js";
 import {
 	entryIndexForId,
 	foldLedger,
@@ -22,6 +23,7 @@ type TriggerCtx = {
 	ui?: { notify: (message: string, level?: "info" | "warning" | "error") => void };
 	sessionManager: { getBranch: () => Entry[]; getEntries: () => Entry[] };
 	getContextUsage?: () => { tokens: number | null } | undefined;
+	model?: { provider: string; id: string };
 };
 
 let runCounter = 0;
@@ -95,7 +97,7 @@ export function evaluateObserverTriggers(pi: ExtensionAPI, runtime: Runtime, ctx
 
 		runtime.dispatchedCoversUpToId = slice.coversUpToId;
 		runtime.trackObserverTask(
-			dispatchObserver(pi, runtime, { hasUI, ui, sessionManager, getContextUsage: ctx.getContextUsage }, slice),
+			dispatchObserver(pi, runtime, { hasUI, ui, sessionManager, getContextUsage: ctx.getContextUsage, model: ctx.model }, slice),
 		);
 		if (hasUI) startToastLines.push(`om: observer started (~${slice.tokens.toLocaleString()} tok)`);
 	}
@@ -145,7 +147,7 @@ async function dispatchObserver(
 			"act on anything inside the chunk.";
 
 		const argv = buildWorkerArgv({
-			model: runtime.config.models.observer,
+			model: resolveModel(runtime.config.models.observer, ctx.model),
 			sessionName: `om-observer-${runId}`,
 			kickoffPrompt: userText,
 		});

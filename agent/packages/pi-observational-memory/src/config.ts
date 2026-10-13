@@ -9,6 +9,18 @@ export interface ConfiguredModel {
 	thinking?: ModelThinkingLevel;
 }
 
+/** `provider`/`id` value meaning "whatever model the parent session is using right now". */
+export const CURRENT_MODEL = "current";
+
+/** Swap the CURRENT_MODEL placeholder for the session's live model, keeping the thinking level. */
+export function resolveModel(
+	configured: ConfiguredModel,
+	current: { provider: string; id: string } | undefined,
+): ConfiguredModel {
+	if (configured.provider !== CURRENT_MODEL || !current) return configured;
+	return { ...configured, provider: current.provider, id: current.id };
+}
+
 export interface Config {
 	/** Raw-history token size of one observation chunk (fixed boundary). */
 	chunkTokens: number;
@@ -57,8 +69,8 @@ export const DEFAULTS: Config = {
 	observerConcurrency: 4,
 	resumeAfterMidRunCompaction: true,
 	models: {
-		observer: { provider: "openrouter", id: "z-ai/glm-5.3", thinking: "low" },
-		consolidator: { provider: "openrouter", id: "z-ai/glm-5.3", thinking: "medium" },
+		observer: { provider: CURRENT_MODEL, id: CURRENT_MODEL, thinking: "low" },
+		consolidator: { provider: CURRENT_MODEL, id: CURRENT_MODEL, thinking: "medium" },
 	},
 	passive: false,
 	debugLog: false,
