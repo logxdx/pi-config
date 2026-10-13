@@ -32,6 +32,11 @@ export interface Config {
 	consolidateAtPoolTokens: number;
 	/** Live context-window usage that triggers compaction. */
 	compactAtContextTokens: number;
+	/**
+	 * Fraction (0-1] of the active model's context window that triggers compaction. When set and
+	 * the window is known it replaces `compactAtContextTokens`, which stays the fallback.
+	 */
+	compactAtContextRatio?: number;
 	/** Verbatim raw tail kept after the cutoff; snaps to a chunk boundary. */
 	tailTokens: number;
 	/**
@@ -75,6 +80,13 @@ export const DEFAULTS: Config = {
 	passive: false,
 	debugLog: false,
 };
+
+/** Context tokens at which compaction fires for a model with this context window. */
+export function compactThresholdTokens(config: Config, contextWindow: number | undefined): number {
+	if (config.compactAtContextRatio && contextWindow && contextWindow > 0)
+		return Math.floor(contextWindow * config.compactAtContextRatio);
+	return config.compactAtContextTokens;
+}
 
 const THINKING_LEVEL_VALUES: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
@@ -125,6 +137,8 @@ function normalizeSettingsConfig(value: Record<string, unknown>, base: Config): 
 	}
 	// chunkOverlapTokens may legitimately be 0.
 	if (value.chunkOverlapTokens === 0) normalized.chunkOverlapTokens = 0;
+	const ratio = value.compactAtContextRatio;
+	if (typeof ratio === "number" && ratio > 0 && ratio <= 1) normalized.compactAtContextRatio = ratio;
 	if (typeof value.resumeAfterMidRunCompaction === "boolean")
 		normalized.resumeAfterMidRunCompaction = value.resumeAfterMidRunCompaction;
 	if (typeof value.passive === "boolean") normalized.passive = value.passive;
