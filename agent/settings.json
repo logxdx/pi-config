@@ -22,9 +22,26 @@
     "./packages/pi-interactive-subagents",
     "./packages/pi-observational-memory"
   ],
+  "compaction": {
+    "modelOverrides": {
+      "llama.cpp/ling3": {
+        "reserveTokens": 32000
+      },
+      "llama.cpp/qwen3.5-0.8b": {
+        "reserveTokens": 20000
+      },
+      "llama.cpp/qwen3.5-2b": {
+        "reserveTokens": 20000
+      },
+      "llama.cpp/sharp-minicpm5": {
+        "reserveTokens": 20000
+      }
+    }
+  },
   "observational-memory": {
     "observerConcurrency": 1,
     "compactAtContextTokens": 64000,
+    "compactAtContextRatio": 0.75,
     "models": {
       "observer": {
         "provider": "current",

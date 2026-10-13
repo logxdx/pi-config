@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { compactThresholdTokens } from "../config.js";
 import { OM_RESUME, rawTokensSinceLastCompaction, type Entry } from "../ledger/index.js";
 import type { Runtime } from "../runtime.js";
 
@@ -42,7 +43,8 @@ function turnWillContinue(event: any): boolean {
 }
 
 /**
- * Trigger compaction on `turn_end` once live context usage crosses `compactAtContextTokens`.
+ * Trigger compaction on `turn_end` once live context usage crosses the compaction threshold
+ * (`compactAtContextRatio` of the model's window, else `compactAtContextTokens`).
  *
  * We fire on turn_end (not agent_end) so compaction can kick in BETWEEN turns — pausing the
  * chat immediately — rather than only after the whole agent run settles. We call `ctx.compact()`
@@ -74,7 +76,8 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 			return;
 		}
 
-		if (!contextPressureTokens(ctx, runtime.config.compactAtContextTokens).due) return;
+		const threshold = compactThresholdTokens(runtime.config, ctx.getContextUsage?.()?.contextWindow);
+		if (!contextPressureTokens(ctx, threshold).due) return;
 
 		// Capture the resume decision NOW, from this turn's event — ctx state at onComplete
 		// (post-abort, post-reload) no longer reflects whether the turn had pending tool work.
