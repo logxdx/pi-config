@@ -16,6 +16,7 @@
  * recording (the standing safety net for lossy rewrites) and is the critic tier's job to catch.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { resolveModel } from "../config.js";
 import {
 	OM_OBSERVATIONS_DROPPED,
 	foldLedger,
@@ -39,6 +40,7 @@ type TriggerCtx = {
 	ui?: { notify: (message: string, level?: "info" | "warning" | "error") => void };
 	sessionManager: { getBranch: () => Entry[]; getEntries: () => Entry[] };
 	getContextUsage?: () => { tokens: number | null } | undefined;
+	model?: { provider: string; id: string };
 };
 
 let runCounter = 0;
@@ -112,7 +114,7 @@ async function dispatchConsolidator(
 	try {
 		const prompt = buildConsolidatorPrompt(runtime.memoryRoot, promote, runtime.config.journeyTargetTokens);
 		const argv = buildWorkerArgv({
-			model: runtime.config.models.consolidator,
+			model: resolveModel(runtime.config.models.consolidator, ctx.model),
 			sessionName: `om-consolidator-${runId}`,
 			kickoffPrompt: prompt,
 		});

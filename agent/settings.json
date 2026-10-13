@@ -1,7 +1,5 @@
 {
-  "defaultProvider": "llamacpp",
-  "defaultModel": "ling3",
-  "lastChangelogVersion": "1.1.0",
+  "lastChangelogVersion": "1.2.0",
   "terminal": {
     "showImages": false,
     "imageWidthCells": 60,
@@ -22,26 +20,24 @@
   "theme": "dark",
   "packages": [
     "./packages/pi-interactive-subagents",
-    "./packages/pi-observational-memory",
-    "npm:pi-bansos"
+    "./packages/pi-observational-memory"
   ],
-  "modelThinkingLevels": {
-    "llamacpp/ling3": "medium"
-  },
   "observational-memory": {
     "observerConcurrency": 1,
-    "compactAtContextTokens": 100000,
+    "compactAtContextTokens": 64000,
     "models": {
       "observer": {
-        "provider": "llamacpp",
-        "id": "ling3",
+        "provider": "current",
+        "id": "current",
         "thinking": "low"
       },
       "consolidator": {
-        "provider": "llamacpp",
-        "id": "ling3",
+        "provider": "current",
+        "id": "current",
         "thinking": "medium"
       }
     }
-  }
+  },
+  "defaultProvider": "llama.cpp",
+  "defaultModel": "qwen3.5-2b"
 }

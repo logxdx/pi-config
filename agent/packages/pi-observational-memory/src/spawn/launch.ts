@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import type { ConfiguredModel } from "../config.js";
+import { CURRENT_MODEL, type ConfiguredModel } from "../config.js";
 import { runCostPath, runResultPath } from "./runs.js";
 
 /** Repo root = two levels up from src/spawn/. The shared agent extension lives at agent/index.ts. */
@@ -51,9 +51,11 @@ export function buildWorkerArgv(opts: {
 		"--no-prompt-templates",
 		"--no-context-files",
 		"--no-builtin-tools",
-		"--model",
-		modelArg(opts.model),
 	];
+	// An unresolved CURRENT_MODEL placeholder (no live session model) leaves pi on its default.
+	if (opts.model.provider !== CURRENT_MODEL) args.push("--model", modelArg(opts.model));
+	// --no-extensions also disables built-in extensions, including the llama.cpp provider.
+	if (opts.model.provider === "llama.cpp") args.push("-e", "builtin:llama.cpp");
 	if (opts.model.thinking) args.push("--thinking", opts.model.thinking);
 	args.push("-e", opts.agentExtensionPath ?? AGENT_EXTENSION_PATH);
 	args.push("-n", opts.sessionName);

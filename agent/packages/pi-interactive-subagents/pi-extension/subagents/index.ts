@@ -233,6 +233,16 @@ function getToolExtensionPath(tool: string): string | undefined {
 }
 
 /**
+ * Map a `provider/id` model to the extension that registers its provider.
+ * `--no-extensions` disables built-in extensions too, so without an explicit
+ * `-e` for it the child can't resolve `--model` for these providers.
+ */
+function getProviderExtension(model: string): string | undefined {
+  const provider = model.split("/")[0];
+  return provider === "llama.cpp" ? "builtin:llama.cpp" : undefined;
+}
+
+/**
  * When this process was spawned as a restricted subagent, the parent pins the
  * set of agents it may itself spawn via PI_SUBAGENT_ALLOWED. `null` means no
  * restriction (top-level session, or an unrestricted child).
@@ -869,6 +879,8 @@ function applySandboxToParts(
       const extPath = getToolExtensionPath(tool);
       if (extPath && existsSync(extPath)) extPaths.add(extPath);
     }
+    const providerExt = loadout.model ? getProviderExtension(loadout.model) : undefined;
+    if (providerExt) extPaths.add(providerExt);
     for (const extPath of extPaths) {
       parts.push("-e", shellEscape(extPath));
     }
@@ -1167,14 +1179,22 @@ function startWidgetRefresh() {
  */
 async function launchSubagent(
   params: typeof SubagentParams.static,
-  ctx: { sessionManager: { getSessionFile(): string | null; getSessionId(): string; getSessionDir(): string }; cwd: string },
+  ctx: {
+    sessionManager: { getSessionFile(): string | null; getSessionId(): string; getSessionDir(): string };
+    cwd: string;
+    model?: { provider: string; id: string };
+  },
   options?: { surface?: string },
 ): Promise<RunningSubagent> {
   const startTime = Date.now();
   const id = Math.random().toString(16).slice(2, 10);
 
   const agentDefs = params.agent ? loadAgentDefaults(params.agent) : null;
-  const effectiveModel = params.model ?? agentDefs?.model;
+  // No model in the call or the agent file: run on the parent session's live model
+  // (pi children only — the claude CLI can't take a pi provider/id).
+  const sessionModel =
+    agentDefs?.cli !== "claude" && ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+  const effectiveModel = params.model ?? agentDefs?.model ?? sessionModel;
   const effectiveTools = agentDefs?.tools;
   const effectiveSkills = agentDefs?.skills;
   const effectiveThinking = agentDefs?.thinking;

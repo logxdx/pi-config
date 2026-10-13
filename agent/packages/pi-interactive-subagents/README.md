@@ -27,6 +27,7 @@ By default sub-agents split off the pi pane. To keep the main screen clean, send
 | --- | --- |
 | `pane` *(default)* | Right split next to the parent pi pane |
 | `window` | One shared `subagents` window in the same tmux session (switch with `prefix n` / `prefix w`); closes when the last agent exits |
+| `windows` | One window per agent, named after it, in the same tmux session (switch with `prefix n` / `prefix p`); each closes when its agent exits |
 | `session` | A separate detached tmux session (`pi-subagents`, override with `PI_SUBAGENT_TMUX_SESSION`). pi itself no longer needs to run inside tmux |
 
 Window and session modes use a `tiled` layout. In session mode, set `PI_SUBAGENT_TERMINAL` to a terminal command and it opens a new OS window attached to the session whenever nobody is watching it:

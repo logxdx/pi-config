@@ -85,15 +85,16 @@ function tmux(args: string[]): string {
  * Where subagent panes are created, from PI_SUBAGENT_SURFACE:
  *   "pane"    (default) right split next to the parent pi pane
  *   "window"  a dedicated "subagents" window in the parent's tmux session
+ *   "windows" one window per subagent, named after it, in the parent's tmux session
  *   "session" a dedicated detached tmux session (PI_SUBAGENT_TMUX_SESSION,
  *             default "pi-subagents"); set PI_SUBAGENT_TERMINAL (e.g. "kitty")
  *             to auto-open a terminal window attached to it
  */
-export type SurfaceMode = "pane" | "window" | "session";
+export type SurfaceMode = "pane" | "window" | "windows" | "session";
 
 export function getSurfaceMode(): SurfaceMode {
   const raw = process.env.PI_SUBAGENT_SURFACE?.trim().toLowerCase();
-  return raw === "window" || raw === "session" ? raw : "pane";
+  return raw === "window" || raw === "windows" || raw === "session" ? raw : "pane";
 }
 
 /** Window user option marking the dedicated subagent window. */
@@ -166,10 +167,11 @@ function rebalanceSurfaces(hintTarget?: string): void {
  * Returns the new pane id (e.g. `%12`).
  */
 export function createSurface(name: string): string {
-  void name; // tmux panes are not named; the pi process inside shows its own title.
   switch (getSurfaceMode()) {
     case "window":
       return createSurfaceInWindow();
+    case "windows":
+      return createSurfaceAsWindow(name);
     case "session":
       return createSurfaceInSession();
     default:
@@ -198,6 +200,16 @@ function parseNewPane(output: string, command: string): { pane: string; window: 
   return { pane, window };
 }
 
+/** The tmux session holding the parent pi pane. */
+function parentSessionId(): string {
+  const parentPane = process.env.TMUX_PANE;
+  return tmux(
+    parentPane
+      ? ["display-message", "-p", "-t", parentPane, "#{session_id}"]
+      : ["display-message", "-p", "#{session_id}"],
+  );
+}
+
 /**
  * Window mode: all subagents share one window (marked with
  * SUBAGENT_WINDOW_OPTION) in the parent pi's session. The first spawn creates
@@ -205,12 +217,7 @@ function parseNewPane(output: string, command: string): { pane: string; window: 
  */
 function createSurfaceInWindow(): string {
   requireTmux();
-  const parentPane = process.env.TMUX_PANE;
-  const sessionId = tmux(
-    parentPane
-      ? ["display-message", "-p", "-t", parentPane, "#{session_id}"]
-      : ["display-message", "-p", "#{session_id}"],
-  );
+  const sessionId = parentSessionId();
 
   const existing = tmux([
     "list-windows", "-t", sessionId, "-F", `#{window_id} #{${SUBAGENT_WINDOW_OPTION}}`,
@@ -228,6 +235,23 @@ function createSurfaceInWindow(): string {
     "new-window",
   );
   tmux(["set-option", "-w", "-t", window, SUBAGENT_WINDOW_OPTION, "1"]);
+  return pane;
+}
+
+/**
+ * Windows mode: each subagent gets its own window, named after it, in the
+ * parent pi's session (reachable with next/previous-window). tmux removes the
+ * window when its pane closes. `-n` also turns off automatic-rename for it.
+ */
+function createSurfaceAsWindow(name: string): string {
+  requireTmux();
+  const { pane } = parseNewPane(
+    tmux([
+      "new-window", "-d", "-t", `${parentSessionId()}:`, "-n", name || SUBAGENT_WINDOW_NAME,
+      "-c", process.cwd(), "-P", "-F", "#{pane_id} #{window_id}",
+    ]),
+    "new-window",
+  );
   return pane;
 }
 
@@ -418,9 +442,11 @@ export async function readScreenAsync(surface: string, lines = 50): Promise<stri
  */
 export function closeSurface(surface: string): void {
   requireTmux();
-  // In dedicated modes the window must be resolved before its pane goes away.
+  // In shared-window modes the window must be resolved before its pane goes away.
+  // In windows mode the window closes with its only pane, so there's nothing to rebalance.
   let windowId: string | undefined;
-  if (getSurfaceMode() !== "pane") {
+  const mode = getSurfaceMode();
+  if (mode === "window" || mode === "session") {
     try {
       windowId = tmux(["display-message", "-p", "-t", surface, "#{window_id}"]);
     } catch {}

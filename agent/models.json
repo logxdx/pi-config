@@ -1,40 +1,39 @@
 {
-    "$schema": "https://pi.dev/schemas/models.schema.json",
-    "providers": {
-        "llamacpp": {
-            "baseUrl": "http://127.0.0.1:11434/v1",
-            "api": "openai-completions",
-            "apiKey": "local",
-            "models": [
-                {
-                    "id": "ling3",
-                    "name": "Ling 3.0 Tiny Q5_K_M",
-                    "reasoning": true,
-                    "input": [
-                        "text"
-                    ],
-                    "contextWindow": 128000,
-                    "maxTokens": 32768,
-                    "cost": {
-                        "input": 0,
-                        "output": 0,
-                        "cacheRead": 0,
-                        "cacheWrite": 0
-                    },
-                    "compat": {
-                        "supportsStore": false,
-                        "supportsDeveloperRole": false,
-                        "supportsReasoningEffort": false,
-                        "maxTokensField": "max_tokens",
-                        "thinkingFormat": "chat-template",
-                        "chatTemplateKwargs": {
-                            "enable_thinking": {
-                                "$var": "thinking.enabled"
-                            }
-                        }
-                    }
-                }
-            ]
+  "providers": {
+    "llama.cpp": {
+      "modelOverrides": {
+        "ling3-tiny": {
+          "contextWindow": 131072,
+          "maxTokens": 32768
+        },
+        "lfm2.5-8b-a1b": {
+          "contextWindow": 128000,
+          "maxTokens": 16384
+        },
+        "qwen3.5-0.8b": {
+          "contextWindow": 81920,
+          "maxTokens": 32768,
+          "reasoning": false
+        },
+        "qwen3.5-2b": {
+          "contextWindow": 81920,
+          "maxTokens": 32768,
+          "reasoning": false
+        },
+        "qwen3.5-4b": {
+          "contextWindow": 65536,
+          "maxTokens": 32768,
+          "samplingParamsByThinkingLevel": {
+            "off": {
+              "temperature": 0.7,
+              "top_p": 0.8,
+              "top_k": 20,
+              "min_p": 0.0,
+              "presence_penalty": 1.5
+            }
+          }
         }
+      }
     }
+  }
 }

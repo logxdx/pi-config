@@ -8,9 +8,6 @@ agent/*.bak*
 agent/sessions/
 **/artifacts/
 
-# Caches written by extensions (pi-bansos model lists, version checks)
-agent/bansos-*.json
-
 # Package installs managed by pi, rebuilt from settings.json "packages"
 agent/git/
 agent/npm/
