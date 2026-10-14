@@ -6,6 +6,7 @@ agent/*.bak*
 
 # Sessions & runtime data
 agent/sessions/
+agent/rewind/
 **/artifacts/
 
 # Package installs managed by pi, rebuilt from settings.json "packages"
