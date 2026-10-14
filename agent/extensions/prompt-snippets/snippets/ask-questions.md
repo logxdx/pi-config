@@ -4,5 +4,4 @@ description: Ask questions to reach a shared understanding.
 placement: append
 order: 10
 ---
-Ask questions until you are 100% sure you know exactly what to do.
-Do not act on this until I confirm we have reached a shared understanding.
+Ask questions until you're 100% sure of what I want: the goal, the constraints and what a good result looks like. Don't act on this until I confirm we have a shared understanding.
