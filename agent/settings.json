@@ -25,7 +25,10 @@
   "compaction": {
     "modelOverrides": {
       "llama.cpp/ling3": {
-        "reserveTokens": 32000
+        "reserveTokens": 32768
+      },
+      "llama.cpp/ling3-expq4k": {
+        "reserveTokens": 32768
       },
       "llama.cpp/qwen3.5-0.8b": {
         "reserveTokens": 20000
@@ -35,6 +38,9 @@
       },
       "llama.cpp/sharp-minicpm5": {
         "reserveTokens": 20000
+      },
+      "llama.cpp/lfm2.5-24b": {
+        "reserveTokens": 16384
       }
     }
   },

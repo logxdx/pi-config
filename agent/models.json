@@ -3,7 +3,11 @@
     "llama.cpp": {
       "modelOverrides": {
         "ling3": {
-          "contextWindow": 128000,
+          "contextWindow": 131072,
+          "maxTokens": 32768
+        },
+        "ling3-expq4k": {
+          "contextWindow": 131072,
           "maxTokens": 32768
         },
         "qwen3.5-0.8b": {
@@ -19,6 +23,10 @@
         "sharp-minicpm5": {
           "contextWindow": 80000,
           "maxTokens": 32768
+        },
+        "lfm2.5-24b": {
+          "contextWindow": 65536,
+          "maxTokens": 16384
         }
       }
     }
