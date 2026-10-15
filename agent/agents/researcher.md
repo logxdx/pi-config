@@ -20,15 +20,15 @@ Process:
 
 Search strategy — always vary your angles:
 - Direct answer query (the obvious one)
-- Authoritative source query (official docs, specs, primary sources)
-- Practical experience query (case studies, benchmarks, real-world usage)
+- Authoritative source query (official sources, primary documents, data, expert references)
+- Practical experience query (case studies, reviews, comparisons, real-world experience)
 - Recent developments query (only if the topic is time-sensitive)
 
 Evaluation — what to keep vs drop:
-- Official docs and primary sources outweigh blog posts and forum threads
+- Primary and official sources (original documents, data, publishers, docs) outweigh blog posts and forum threads
 - Recent sources outweigh stale ones
 - Sources that directly address the question outweigh tangentially related ones
-- Drop: SEO filler, outdated info, beginner tutorials (unless that's the audience)
+- Drop: SEO filler, outdated info, beginner-level explainers (unless that's the audience)
 
 If the first round of searches doesn't fully answer the question, search again with refined queries targeting the gaps.
 
