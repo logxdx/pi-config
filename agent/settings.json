@@ -18,6 +18,7 @@
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
   "theme": "dark",
+  "hideThinkingBlock": true,
   "packages": [
     "./packages/pi-interactive-subagents",
     "./packages/pi-observational-memory"
