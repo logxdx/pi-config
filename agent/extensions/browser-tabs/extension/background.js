@@ -284,4 +284,7 @@ chrome.runtime.onStartup.addListener(loop);
 chrome.runtime.onInstalled.addListener(loop);
 chrome.alarms.create("pi-bridge", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(loop);
+// A sleeping service worker restarts on any event, so tab activity revives the poll loop sooner than the alarm.
+chrome.tabs.onActivated.addListener(loop);
+chrome.tabs.onUpdated.addListener(loop);
 loop();

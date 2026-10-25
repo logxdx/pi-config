@@ -8,7 +8,9 @@ export const PORT = Number(process.env.PI_BROWSER_PORT) || 17420;
 export const TOKEN_FILE = path.join(os.homedir(), ".config", "pi-browser-tabs", "token");
 
 const POLL_HOLD_MS = 20000;
-const CONNECTED_WITHIN_MS = 35000;
+const CONNECTED_WITHIN_MS = 3000;
+// A sleeping MV3 service worker is revived by the extension's 30s alarm or a tab event.
+const WAKE_WAIT_MS = 35000;
 
 interface Pending {
 	resolve: (value: unknown) => void;
@@ -55,7 +57,7 @@ export class Bridge {
 	private lastPoll = 0;
 
 	connected(): boolean {
-		return Date.now() - this.lastPoll < CONNECTED_WITHIN_MS;
+		return this.waiters.length > 0 || Date.now() - this.lastPoll < CONNECTED_WITHIN_MS;
 	}
 
 	start(): Promise<void> {
@@ -95,7 +97,7 @@ export class Bridge {
 
 	async call(op: string, args: unknown, timeoutMs = 60000, signal?: AbortSignal): Promise<unknown> {
 		await this.start();
-		if (!this.connected()) await this.waitConnected(4000);
+		if (!this.connected()) await this.waitConnected(WAKE_WAIT_MS);
 		if (!this.connected()) {
 			throw new Error(
 				"The Pi Browser Bridge extension is not connected. Check that Helium is running with the extension " +
