@@ -84,7 +84,10 @@ export class Bridge {
 	}
 
 	stop(): void {
+		// close() alone leaves keep-alive sockets open, and the extension would keep polling this
+		// dead server instead of reconnecting to the next session's bridge.
 		this.server?.close();
+		this.server?.closeAllConnections();
 		this.server = undefined;
 		this.starting = undefined;
 		for (const res of this.waiters.splice(0)) res.writeHead(204).end();
@@ -132,9 +135,12 @@ export class Bridge {
 	}
 
 	private enqueue(cmd: Command) {
-		const waiter = this.waiters.shift();
-		if (waiter) this.deliver(waiter, cmd);
-		else this.queue.push(cmd);
+		for (;;) {
+			const waiter = this.waiters.shift();
+			if (!waiter) return void this.queue.push(cmd);
+			// Skip polls whose connection died (service worker killed) so the command isn't lost.
+			if (!waiter.destroyed && !waiter.writableEnded && waiter.socket?.writable) return this.deliver(waiter, cmd);
+		}
 	}
 
 	private deliver(res: http.ServerResponse, cmd: Command) {

@@ -256,27 +256,42 @@ const handle = async (cmd) => {
 	}).catch(() => {});
 };
 
+// The bridge holds a poll up to 20s, so anything much longer is a dead connection.
+const POLL_TIMEOUT_MS = 30000;
+
+const setStatusBadge = (text) => {
+	chrome.action.setBadgeText({ text }).catch(() => {});
+	chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
+};
+
 let running = false;
 const loop = async () => {
 	if (running) return;
 	running = true;
-	for (;;) {
-		const { token, port } = await cfg();
-		if (!token) {
-			await sleep(5000);
-			continue;
+	try {
+		for (;;) {
+			try {
+				const { token, port } = await cfg();
+				if (!token) {
+					await sleep(5000);
+					continue;
+				}
+				// Any extension API call resets the service worker's idle timer.
+				await chrome.runtime.getPlatformInfo();
+				const res = await fetch(`http://127.0.0.1:${port}/poll`, {
+					headers: { Authorization: `Bearer ${token}` },
+					signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+				});
+				// A token mismatch is otherwise invisible: show "!" on the toolbar button.
+				setStatusBadge(res.status === 401 ? "!" : "");
+				if (res.status === 200) handle(await res.json());
+				else if (res.status !== 204) await sleep(5000);
+			} catch {
+				await sleep(2000);
+			}
 		}
-		try {
-			// Any extension API call resets the service worker's idle timer.
-			await chrome.runtime.getPlatformInfo();
-			const res = await fetch(`http://127.0.0.1:${port}/poll`, {
-				headers: { Authorization: `Bearer ${token}` },
-			});
-			if (res.status === 200) handle(await res.json());
-			else if (res.status !== 204) await sleep(5000);
-		} catch {
-			await sleep(2000);
-		}
+	} finally {
+		running = false;
 	}
 };
 
