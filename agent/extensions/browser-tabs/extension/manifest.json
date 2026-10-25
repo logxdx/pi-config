@@ -7,5 +7,14 @@
   "permissions": ["tabs", "tabGroups", "scripting", "storage", "alarms"],
   "host_permissions": ["<all_urls>"],
   "action": { "default_title": "Share this tab with pi" },
+  "commands": {
+    "toggle-share": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Share or stop sharing the current tab with pi"
+    },
+    "unshare-all": {
+      "description": "Stop sharing every tab with pi"
+    }
+  },
   "options_page": "options.html"
 }

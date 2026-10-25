@@ -27,6 +27,15 @@ pi can list every tab's title and URL, but it can only read or act on:
 - tabs you share, by clicking the extension's toolbar button on that tab (the badge shows `pi`; click again to revoke), and
 - tabs it opened itself, which are grouped in a blue "Pi" tab group.
 
+Keyboard shortcuts do the same as the toolbar button:
+
+| Command | Default | Effect |
+|---|---|---|
+| Share or stop sharing the current tab | `Alt+Shift+P` | toggles the current tab |
+| Stop sharing every tab | none | revokes all grants at once |
+
+Rebind or set them at `helium://extensions/shortcuts` (Chromium's shortcuts page). If another extension or the OS already uses `Alt+Shift+P`, the default is silently not applied; set one there.
+
 The extension options have an "allow every tab" switch, off by default. Grants live in session storage and are forgotten when the browser closes.
 
 ## How it works

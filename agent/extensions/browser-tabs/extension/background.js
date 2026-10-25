@@ -21,12 +21,27 @@ const setBadge = (tabId, on) => {
 	chrome.action.setBadgeBackgroundColor({ tabId, color: "#1a73e8" }).catch(() => {});
 };
 
-chrome.action.onClicked.addListener(async (tab) => {
+const toggleShare = async (tab) => {
+	if (!tab) return;
 	const shared = await getSet("shared");
 	if (shared.has(tab.id)) shared.delete(tab.id);
 	else shared.add(tab.id);
 	await putSet("shared", shared);
 	setBadge(tab.id, shared.has(tab.id));
+};
+
+chrome.action.onClicked.addListener(toggleShare);
+
+// Keyboard shortcuts; rebind them on the browser's extension shortcuts page.
+chrome.commands.onCommand.addListener(async (command, tab) => {
+	if (command === "toggle-share") {
+		const [active] = tab ? [tab] : await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+		await toggleShare(active);
+	} else if (command === "unshare-all") {
+		const shared = await getSet("shared");
+		await putSet("shared", new Set());
+		for (const id of shared) setBadge(id, false);
+	}
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
