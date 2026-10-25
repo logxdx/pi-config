@@ -21,13 +21,35 @@ const setBadge = (tabId, on) => {
 	chrome.action.setBadgeBackgroundColor({ tabId, color: "#1a73e8" }).catch(() => {});
 };
 
+// A shared tab also gets its own green "shared" tab group: native browser UI that stays in
+// place in the tab strip and that the page cannot see (unlike editing its title or favicon).
+// A tab already in one of the user's own groups keeps that group and only gets the badge.
+const markShared = async (tabId, on) => {
+	setBadge(tabId, on);
+	try {
+		const tab = await chrome.tabs.get(tabId);
+		const none = chrome.tabGroups.TAB_GROUP_ID_NONE;
+		const ours = await getSet("sharedGroups");
+		if (on && tab.groupId === none) {
+			const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+			await chrome.tabGroups.update(groupId, { title: "shared", color: "green" });
+			ours.add(groupId);
+			await putSet("sharedGroups", ours);
+		} else if (!on && ours.has(tab.groupId)) {
+			await chrome.tabs.ungroup(tabId);
+			ours.delete(tab.groupId);
+			await putSet("sharedGroups", ours);
+		}
+	} catch {}
+};
+
 const toggleShare = async (tab) => {
 	if (!tab) return;
 	const shared = await getSet("shared");
 	if (shared.has(tab.id)) shared.delete(tab.id);
 	else shared.add(tab.id);
 	await putSet("shared", shared);
-	setBadge(tab.id, shared.has(tab.id));
+	await markShared(tab.id, shared.has(tab.id));
 };
 
 chrome.action.onClicked.addListener(toggleShare);
@@ -40,7 +62,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 	} else if (command === "unshare-all") {
 		const shared = await getSet("shared");
 		await putSet("shared", new Set());
-		for (const id of shared) setBadge(id, false);
+		for (const id of shared) await markShared(id, false);
 	}
 });
 

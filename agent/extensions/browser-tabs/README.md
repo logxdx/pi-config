@@ -24,8 +24,10 @@ If port 17420 is taken, set `PI_BROWSER_PORT` for pi and the same port in the ex
 
 pi can list every tab's title and URL, but it can only read or act on:
 
-- tabs you share, by clicking the extension's toolbar button on that tab (the badge shows `pi`; click again to revoke), and
+- tabs you share, by clicking the extension's toolbar button on that tab (click again to revoke), and
 - tabs it opened itself, which are grouped in a blue "Pi" tab group.
+
+A shared tab shows two indicators: a `pi` badge on the toolbar button, and its own green **shared** tab group in the tab strip. Both are native browser UI, so the page can't see them; the extension never edits the page's title or favicon. A tab that is already in one of your own groups keeps it and only gets the badge. Sharing doesn't move tabs, and revoking removes the group.
 
 Keyboard shortcuts do the same as the toolbar button:
 
