@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pi Browser Bridge</title>
+<style>
+  body { font: 14px system-ui, sans-serif; max-width: 520px; margin: 32px auto; padding: 0 16px; }
+  label { display: block; margin: 16px 0 4px; font-weight: 600; }
+  input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 6px; font: inherit; }
+  .row { margin-top: 16px; }
+  .hint { color: #666; font-size: 12px; margin-top: 4px; }
+  #status { margin-left: 12px; color: #2a7; }
+</style>
+<h1>Pi Browser Bridge</h1>
+<label for="token">Token</label>
+<input id="token" type="password" autocomplete="off">
+<div class="hint">Contents of <code>~/.config/pi-browser-tabs/token</code> (created the first time pi starts the bridge).</div>
+<label for="port">Port</label>
+<input id="port" type="text" inputmode="numeric">
+<div class="hint">Must match <code>PI_BROWSER_PORT</code> in pi. Default 17420.</div>
+<div class="row">
+  <label><input id="allowAll" type="checkbox"> Allow pi to use every tab without sharing it first</label>
+  <div class="hint">Off by default: pi can list tab titles and URLs, but only reads or acts on tabs you share with the toolbar button (or that pi opened itself).</div>
+</div>
+<div class="row"><button id="save">Save</button><span id="status"></span></div>
+<script src="options.js"></script>

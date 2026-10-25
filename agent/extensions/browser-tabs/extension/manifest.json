@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Pi Browser Bridge",
+  "version": "0.1.0",
+  "description": "Lets the pi coding agent read and act on tabs you share, without the DevTools protocol.",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["tabs", "tabGroups", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_title": "Share this tab with pi" },
+  "options_page": "options.html"
+}
