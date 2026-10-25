@@ -13,9 +13,9 @@
 <label for="token">Token</label>
 <input id="token" type="password" autocomplete="off">
 <div class="hint">Contents of <code>~/.config/pi-browser-tabs/token</code> (created the first time pi starts the bridge).</div>
-<label for="port">Port</label>
+<label for="port">First port</label>
 <input id="port" type="text" inputmode="numeric">
-<div class="hint">Must match <code>PI_BROWSER_PORT</code> in pi. Default 17420.</div>
+<div class="hint">Each pi session uses the first free port from here up (10 ports, so up to 10 parallel sessions). Must match <code>PI_BROWSER_PORT</code> in pi. Default 17420.</div>
 <div class="row">
   <label><input id="allowAll" type="checkbox"> Allow pi to use every tab without sharing it first</label>
   <div class="hint">Off by default: pi can list tab titles and URLs, but only reads or acts on tabs you share with the toolbar button (or that pi opened itself).</div>

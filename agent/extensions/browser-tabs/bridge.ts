@@ -4,7 +4,13 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
-export const PORT = Number(process.env.PI_BROWSER_PORT) || 17420;
+// Each pi session binds the first free port in [BASE_PORT, BASE_PORT + PORT_COUNT); the extension
+// polls all of them. Keep PORT_COUNT in sync with background.js.
+export const BASE_PORT = Number(process.env.PI_BROWSER_PORT) || 17420;
+export const PORT_COUNT = 10;
+// Identifies this pi process to the extension, so tabs a session opens stay its own. Stable
+// across /new and /resume, which keep the process.
+const SESSION = String(process.pid);
 export const TOKEN_FILE = path.join(os.homedir(), ".config", "pi-browser-tabs", "token");
 
 const POLL_HOLD_MS = 20000;
@@ -20,6 +26,7 @@ interface Pending {
 
 interface Command {
 	id: string;
+	session: string;
 	op: string;
 	args: unknown;
 }
@@ -55,31 +62,39 @@ export class Bridge {
 	private waiters: http.ServerResponse[] = [];
 	private pending = new Map<string, Pending>();
 	private lastPoll = 0;
+	private port = BASE_PORT;
 
 	connected(): boolean {
 		return this.waiters.length > 0 || Date.now() - this.lastPoll < CONNECTED_WITHIN_MS;
 	}
 
 	start(): Promise<void> {
-		this.starting ??= new Promise<void>((resolve, reject) => {
+		this.starting ??= (async () => {
 			this.token = loadToken();
-			const server = http.createServer((req, res) => this.route(req, res));
-			server.once("error", (err: NodeJS.ErrnoException) => {
-				this.starting = undefined;
-				reject(
-					err.code === "EADDRINUSE"
-						? new Error(
-								`Port ${PORT} is already in use, probably by another pi session that owns the browser bridge. ` +
-									"Close that session or set PI_BROWSER_PORT to a different port (and match it in the extension options).",
-							)
-						: err,
-				);
-			});
-			server.listen(PORT, "127.0.0.1", () => {
+			for (let i = 0; i < PORT_COUNT; i++) {
+				const port = BASE_PORT + i;
+				const server = http.createServer((req, res) => this.route(req, res));
+				try {
+					await new Promise<void>((resolve, reject) => {
+						server.once("error", reject);
+						server.listen(port, "127.0.0.1", resolve);
+					});
+				} catch (err) {
+					if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") continue;
+					this.starting = undefined;
+					throw err;
+				}
+				server.on("error", () => {});
+				this.port = port;
 				this.server = server;
-				resolve();
-			});
-		});
+				return;
+			}
+			this.starting = undefined;
+			throw new Error(
+				`Ports ${BASE_PORT}-${BASE_PORT + PORT_COUNT - 1} are all in use, by other pi sessions (up to ${PORT_COUNT} ` +
+					"can use the browser at once). Close one of them.",
+			);
+		})();
 		return this.starting;
 	}
 
@@ -120,7 +135,7 @@ export class Bridge {
 				this.pending.delete(id);
 				reject(new Error("Aborted."));
 			});
-			this.enqueue({ id, op, args });
+			this.enqueue({ id, session: SESSION, op, args });
 		});
 	}
 
@@ -149,7 +164,7 @@ export class Bridge {
 
 	private authorized(req: http.IncomingMessage): boolean {
 		const host = req.headers.host ?? "";
-		if (host !== `127.0.0.1:${PORT}` && host !== `localhost:${PORT}`) return false;
+		if (host !== `127.0.0.1:${this.port}` && host !== `localhost:${this.port}`) return false;
 		const origin = req.headers.origin;
 		if (origin && !origin.startsWith("chrome-extension://")) return false;
 		const header = req.headers.authorization ?? "";

@@ -5,15 +5,21 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const cfg = () => chrome.storage.local.get({ token: "", port: 17420, allowAll: false });
+// Each pi session runs its own bridge on a port in [port, port + PORT_COUNT). Keep in sync with bridge.ts.
+const PORT_COUNT = 10;
 const getSet = async (key) => new Set((await chrome.storage.session.get({ [key]: [] }))[key]);
 const putSet = (key, set) => chrome.storage.session.set({ [key]: [...set] });
+// Tabs a pi session opened, as tabId -> session id: only that session may control them.
+const getOwned = async () => (await chrome.storage.session.get({ owned: {} })).owned;
+const putOwned = (owned) => chrome.storage.session.set({ owned });
 
 // ── Sharing ──────────────────────────────────────────────────────────
 
-// "shared" tabs were granted with the toolbar button; "owned" tabs were opened by pi.
-const mayControl = async (tabId) => {
+// "shared" tabs were granted with the toolbar button (usable by every pi session); "owned" tabs
+// were opened by one pi session and belong to it alone.
+const mayControl = async (tabId, session) => {
 	if ((await cfg()).allowAll) return true;
-	return (await getSet("shared")).has(tabId) || (await getSet("owned")).has(tabId);
+	return (await getSet("shared")).has(tabId) || (await getOwned())[tabId] === session;
 };
 
 const setBadge = (tabId, on) => {
@@ -67,18 +73,18 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-	for (const key of ["shared", "owned"]) {
-		const set = await getSet(key);
-		if (set.delete(tabId)) await putSet(key, set);
-	}
+	const shared = await getSet("shared");
+	if (shared.delete(tabId)) await putSet("shared", shared);
+	const owned = await getOwned();
+	if (delete owned[tabId]) await putOwned(owned);
 });
 
-const requireControl = async (tabId) => {
+const requireControl = async (tabId, session) => {
 	if (!Number.isInteger(tabId)) throw new Error("A tab id is required (see browser_tabs).");
 	await chrome.tabs.get(tabId).catch(() => {
 		throw new Error(`Tab ${tabId} no longer exists.`);
 	});
-	if (!(await mayControl(tabId))) {
+	if (!(await mayControl(tabId, session))) {
 		throw new Error(
 			`Tab ${tabId} is not shared with pi. Ask the user to click the Pi Browser Bridge toolbar button on that tab.`,
 		);
@@ -164,9 +170,9 @@ const groupOwned = async (tabId) => {
 // ── Operations ───────────────────────────────────────────────────────
 
 const ops = {
-	async list() {
+	async list(_args, session) {
 		const shared = await getSet("shared");
-		const owned = await getSet("owned");
+		const owned = await getOwned();
 		const { allowAll } = await cfg();
 		const tabs = await chrome.tabs.query({});
 		return tabs.map((t) => ({
@@ -175,17 +181,18 @@ const ops = {
 			active: t.active,
 			title: t.title || "",
 			url: t.url || "",
-			access: allowAll || shared.has(t.id) || owned.has(t.id) ? (owned.has(t.id) ? "owned" : "shared") : "none",
+			access:
+				owned[t.id] === session ? "owned" : allowAll || shared.has(t.id) ? "shared" : "none",
 		}));
 	},
 
-	async read({ tab, selector, interactiveOnly, maxChars }) {
-		await requireControl(tab);
+	async read({ tab, selector, interactiveOnly, maxChars }, session) {
+		await requireControl(tab, session);
 		return inPage(tab, { kind: "read", selector, interactiveOnly, maxChars });
 	},
 
-	async act({ tab, ...cmd }) {
-		await requireControl(tab);
+	async act({ tab, ...cmd }, session) {
+		await requireControl(tab, session);
 		const result = await inPage(tab, cmd);
 		await sleep(400);
 		const now = await chrome.tabs.get(tab);
@@ -193,17 +200,17 @@ const ops = {
 		return `${result}\n---\n${await tabLine(tab)}`;
 	},
 
-	async tab({ action, tab, url, focus }) {
+	async tab({ action, tab, url, focus }, session) {
 		if (action === "open") {
 			const created = await chrome.tabs.create({ url: url || "about:blank", active: !!focus });
-			const owned = await getSet("owned");
-			owned.add(created.id);
-			await putSet("owned", owned);
+			const owned = await getOwned();
+			owned[created.id] = session;
+			await putOwned(owned);
 			await groupOwned(created.id).catch(() => {});
 			if (url) await waitLoaded(created.id);
 			return `opened tab ${created.id}\n${await tabLine(created.id)}`;
 		}
-		await requireControl(tab);
+		await requireControl(tab, session);
 		switch (action) {
 			case "navigate":
 				if (!url) throw new Error("'url' is required.");
@@ -226,7 +233,7 @@ const ops = {
 				break;
 			}
 			case "close":
-				if (!(await getSet("owned")).has(tab)) {
+				if ((await getOwned())[tab] !== session) {
 					throw new Error("pi only closes tabs it opened itself. Ask the user to close this one.");
 				}
 				await chrome.tabs.remove(tab);
@@ -240,12 +247,12 @@ const ops = {
 
 // ── Bridge loop ──────────────────────────────────────────────────────
 
-const handle = async (cmd) => {
-	const { token, port } = await cfg();
+const handle = async (cmd, port) => {
+	const { token } = await cfg();
 	let body;
 	try {
 		if (!ops[cmd.op]) throw new Error(`Unknown operation "${cmd.op}".`);
-		body = { id: cmd.id, ok: true, data: await ops[cmd.op](cmd.args || {}) };
+		body = { id: cmd.id, ok: true, data: await ops[cmd.op](cmd.args || {}, cmd.session) };
 	} catch (e) {
 		body = { id: cmd.id, ok: false, error: String((e && e.message) || e) };
 	}
@@ -256,50 +263,64 @@ const handle = async (cmd) => {
 	}).catch(() => {});
 };
 
-// The bridge holds a poll up to 20s, so anything much longer is a dead connection.
+// The bridge holds a poll up to 20s, so anything much longer means a dead connection.
 const POLL_TIMEOUT_MS = 30000;
 
-const setStatusBadge = (text) => {
-	chrome.action.setBadgeText({ text }).catch(() => {});
+// Ports whose bridge rejected our token; a red "!" on the toolbar button shows it, since it is otherwise invisible.
+const unauthorized = new Set();
+const showAuthBadge = () => {
+	chrome.action.setBadgeText({ text: unauthorized.size ? "!" : "" }).catch(() => {});
 	chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
 };
 
-let running = false;
-const loop = async () => {
-	if (running) return;
-	running = true;
+// One poll loop per port in the range: a port with no bridge just refuses connections and is retried.
+const polling = new Set();
+const pollPort = async (port) => {
+	if (polling.has(port)) return;
+	polling.add(port);
 	try {
 		for (;;) {
 			try {
-				const { token, port } = await cfg();
-				if (!token) {
+				const cur = await cfg();
+				if (port < cur.port || port >= cur.port + PORT_COUNT) return;
+				if (!cur.token) {
 					await sleep(5000);
 					continue;
 				}
 				// Any extension API call resets the service worker's idle timer.
 				await chrome.runtime.getPlatformInfo();
 				const res = await fetch(`http://127.0.0.1:${port}/poll`, {
-					headers: { Authorization: `Bearer ${token}` },
+					headers: { Authorization: `Bearer ${cur.token}` },
 					signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
 				});
-				// A token mismatch is otherwise invisible: show "!" on the toolbar button.
-				setStatusBadge(res.status === 401 ? "!" : "");
-				if (res.status === 200) handle(await res.json());
+				const rejected = res.status === 401;
+				if (rejected !== unauthorized.has(port)) {
+					if (rejected) unauthorized.add(port);
+					else unauthorized.delete(port);
+					showAuthBadge();
+				}
+				if (res.status === 200) handle(await res.json(), port);
 				else if (res.status !== 204) await sleep(5000);
 			} catch {
+				if (unauthorized.delete(port)) showAuthBadge();
 				await sleep(2000);
 			}
 		}
 	} finally {
-		running = false;
+		polling.delete(port);
 	}
+};
+
+const loop = async () => {
+	const { port } = await cfg();
+	for (let i = 0; i < PORT_COUNT; i++) pollPort(port + i);
 };
 
 chrome.runtime.onStartup.addListener(loop);
 chrome.runtime.onInstalled.addListener(loop);
 chrome.alarms.create("pi-bridge", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(loop);
-// A sleeping service worker restarts on any event, so tab activity revives the poll loop sooner than the alarm.
+// A sleeping service worker restarts on any event, so tab activity revives the poll loops sooner than the alarm.
 chrome.tabs.onActivated.addListener(loop);
 chrome.tabs.onUpdated.addListener(loop);
 loop();

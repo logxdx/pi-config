@@ -19,7 +19,7 @@ Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_tab`. They talk t
 
 - `browser_tabs` lists every tab's title and URL. pi can only **read or act** on tabs marked `shared` or `owned`.
 - `shared`: the user clicked the **Pi Browser Bridge** toolbar button on that tab (click again to revoke). If a tab you need shows `none`, ask them to share it. Do not work around it.
-- `owned`: tabs pi opened with `browser_tab` (they sit in a blue "Pi" tab group). Open a new tab when you don't need their existing one.
+- `owned`: tabs this pi session opened with `browser_tab` (they sit in a blue "Pi" tab group). Other sessions and subagents see them as not usable. Open a new tab when you don't need their existing one.
 - Only close tabs you opened.
 
 ## Core loop

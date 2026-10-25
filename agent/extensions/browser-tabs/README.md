@@ -18,14 +18,14 @@ The companion skill `skills/browser-tabs` tells the agent when to use these, and
 3. Open the extension's **Details → Extension options**, paste the token, and save.
 4. Check: ask pi to list your browser tabs.
 
-If port 17420 is taken, set `PI_BROWSER_PORT` for pi and the same port in the extension options. Set `PI_BROWSER_BIN` if your browser binary isn't `helium-browser`.
+Each pi session binds the first free port from 17420 up (10 ports), and the extension polls all of them, so several sessions can use the browser at once. To move the range, set `PI_BROWSER_PORT` for pi and the same first port in the extension options. Set `PI_BROWSER_BIN` if your browser binary isn't `helium-browser`.
 
 ## Sharing
 
 pi can list every tab's title and URL, but it can only read or act on:
 
 - tabs you share, by clicking the extension's toolbar button on that tab (click again to revoke), and
-- tabs it opened itself, which are grouped in a blue "Pi" tab group.
+- tabs it opened itself, which are grouped in a blue "Pi" tab group. These belong to the session that opened them; other pi sessions (and subagents) cannot control them. Tabs you share are usable by every session.
 
 A shared tab shows two indicators: a `pi` badge on the toolbar button, and its own green **shared** tab group in the tab strip. Both are native browser UI, so the page can't see them; the extension never edits the page's title or favicon. A tab that is already in one of your own groups keeps it and only gets the badge. Sharing doesn't move tabs, and revoking removes the group.
 
@@ -43,7 +43,7 @@ The extension options have an "allow every tab" switch, off by default. Grants l
 ## How it works
 
 ```
-pi extension (index.ts) ── HTTP long-poll ── 127.0.0.1:17420 ── extension service worker ── page.js in the tab
+pi session (index.ts) ── HTTP long-poll ── 127.0.0.1:17420..17429 (one port per session) ── extension service worker ── page.js in the tab
 ```
 
 The bridge (`bridge.ts`) listens on loopback only. Requests need the shared token, a loopback `Host` header, and an extension `Origin` if one is sent. The extension polls for commands and posts results back; there is no WebSocket, so no dependencies.
@@ -55,5 +55,5 @@ The bridge (`bridge.ts`) listens on loopback only. Requests need the shared toke
 - Events from content scripts have no user activation. Most sites accept them; some payment widgets and anti-bot checks can tell. The agent is told to hand those steps to you.
 - Only the top page and same-origin iframes are read.
 - No screenshots, console or network access. Use `agent-browser` for debugging.
-- One pi session owns the bridge port. A second concurrent session gets a clear "port in use" error.
+- Up to 10 pi sessions at a time; an 11th gets a clear "all ports in use" error. A subagent is its own session, so it cannot reuse tabs its parent opened unless you share them.
 - If the extension's service worker is asleep, the first call can take a few seconds while it wakes.
