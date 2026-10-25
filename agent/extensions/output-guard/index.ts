@@ -11,7 +11,8 @@
  * they are cut to the budget with an offset to continue from.
  *
  * PI_OUTPUT_GUARD_CHARS=<n> fixes the budget in characters.
- * PI_OUTPUT_GUARD=off disables the extension.
+ * /output-guard [on|off|status] toggles it for the session (no argument flips it).
+ * PI_OUTPUT_GUARD=off starts the session with it off.
  * To remove: delete this directory and /reload.
  */
 
@@ -30,6 +31,7 @@ const MAX_PREVIEW_CHARS = 4000;
 const PAGE_LINES = 150;
 const KEEP_MS = 2 * 24 * 60 * 60 * 1000;
 
+const STATUS_KEY = "output-guard";
 const spillDir = join(tmpdir(), "pi-output-guard");
 
 function budgetChars(contextWindow: number | undefined): number {
@@ -100,10 +102,38 @@ function spill(toolName: string, toolCallId: string, text: string): string | und
 }
 
 export default function (pi: ExtensionAPI) {
-	if (process.env.PI_OUTPUT_GUARD === "off") return;
+	let disabled = process.env.PI_OUTPUT_GUARD === "off";
 	cleanup();
 
+	pi.registerCommand("output-guard", {
+		description: "Toggle output-guard (spill oversized tool output to a temp file). Args: on | off | status.",
+		handler: async (args, ctx) => {
+			const arg = (args ?? "").trim().toLowerCase();
+			if (arg === "status") {
+				const budget = budgetChars(ctx.model?.contextWindow);
+				ctx.ui.notify(`output-guard is ${disabled ? "OFF" : "on"} (cap ${kb(budget)} for this model).`, "info");
+				return;
+			}
+			if (arg === "on") disabled = false;
+			else if (arg === "off") disabled = true;
+			else if (arg === "") disabled = !disabled;
+			else {
+				ctx.ui.notify("Usage: /output-guard [on|off|status]", "warning");
+				return;
+			}
+			if (disabled) {
+				const { theme } = ctx.ui;
+				ctx.ui.setStatus(STATUS_KEY, theme.bg("toolErrorBg", theme.bold(theme.fg("error", " ⚠ OG OFF "))));
+				ctx.ui.notify("output-guard DISABLED: large tool output goes straight into context. Run /output-guard to re-enable.", "warning");
+			} else {
+				ctx.ui.setStatus(STATUS_KEY, undefined);
+				ctx.ui.notify("output-guard enabled.", "info");
+			}
+		},
+	});
+
 	pi.on("tool_result", (event, ctx) => {
+		if (disabled) return;
 		const blocks = event.content;
 		if (!blocks.length || blocks.some((b) => b.type !== "text")) return;
 		const text = blocks.map((b) => (b as { text: string }).text).join("\n");
