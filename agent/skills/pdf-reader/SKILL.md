@@ -1,91 +1,31 @@
 ---
 name: pdf-reader
-description: Read and comprehend PDF files (and DOCX/PPTX/XLSX), especially math lecture notes and academic papers. Use when the user asks to read, parse, analyze, or extract content from a PDF or document file.
+description: Read PDFs and documents (DOCX/PPTX/XLSX, images), including math lecture notes and academic papers, page by page without flooding context. Use when the user asks to read, summarize, search, analyze, or extract content from a PDF or document file.
 ---
 
 # PDF Reader
 
-Read documents as text with [liteparse](https://github.com/run-llama/liteparse): fast local parsing of the PDF text layer into markdown (headings, tables, lists). No OCR and no images: scanned pages and figures can't be read.
-
-## Setup
-
-Everything runs from a venv at `SKILL_DIR/.venv` with `liteparse` installed. If `SKILL_DIR/.venv/bin/lit` is missing:
+Use the `pdf` command (if it is not found, use `~/.pi/agent/skills/pdf-reader/pdf`). It wraps `liteparse`, caches results, and limits every output. Read documents only through it, never `cat` a whole parse.
 
 ```bash
-python3 -m venv SKILL_DIR/.venv
-SKILL_DIR/.venv/bin/pip install -r SKILL_DIR/requirements.txt
+pdf map FILE              # step 1, always: one row per page + fast text parse (no OCR)
+pdf ocr FILE              # OCR the pages map marked OCR (or: pdf ocr FILE 4,9-12)
+pdf outline FILE          # headings with page numbers (pdf outline FILE 4 = deeper)
+pdf find FILE REGEX       # case-insensitive search, one line per match: "p12: ..."
+pdf page FILE N           # read one page; long pages say how to continue
+pdf shot FILE N           # PNG of page N; read the printed path to see the page
 ```
 
-DOCX/PPTX/XLSX also need LibreOffice installed.
+## How to work
 
-## The golden rule: parse ONCE, then search the file
+1. `pdf map FILE`. Columns: `chars` (size of the page's text), `ocr` (`OCR` = no usable text until OCR'd), `cols`, `tables`, `figs`, `flags`. This shows where the content is and which pages are hard.
+2. If pages are marked `OCR` and you need them: `pdf ocr FILE`. Skip it for a quick first look.
+3. Find what you need with `pdf outline` and `pdf find`, then read only those pages with `pdf page`. Read the next page too when a table or proof continues.
+4. Use `pdf shot` for figures, charts, garbled math, or to check a table.
 
-Parsing re-extracts the whole document. Parse once into `doc.md`, then search and read that file — never re-parse to look something up.
+## Notes
 
-```bash
-python3 SKILL_DIR/scripts/pdf_parse.py <file> [--pages SPEC] [--out DIR]
-```
-
-- Writes `/tmp/pi-pdf-<name>/doc.md` with a `<!-- page N -->` marker before each page.
-- Prints a triage table: `page | chars | images | flags`.
-- Page specs: `1-5`, `1,3,7`, `3`, `"1-5,10"` (1-indexed).
-
-Search the parsed file (each hit labelled with its page):
-
-```bash
-python3 SKILL_DIR/scripts/pdf_search.py /tmp/pi-pdf-<name>/doc.md "<regex>" [--context N] [--literal] [--max N]
-```
-
-Read a stretch of it with the `read` tool on `doc.md` (use offset/limit), or `grep -n '<!-- page 7 -->' doc.md` to find where page 7 starts.
-
-## Strategy
-
-### Step 1: Parse and triage
-
-Run `pdf_parse.py` on every new document first. The table tells you:
-- How many pages (determines strategy)
-- `scanned` / `no-text` flags → no text layer; that page's content is unavailable, tell the user
-- `embedded-images` / `vector-text` → figures or diagrams; only their captions and labels come through
-- `garbled` → text extraction is unreliable on that page; say so when quoting it
-
-### Step 2: Pick a strategy by size
-
-**Short (≤15 pages):** read all of `doc.md`.
-
-**Medium (15–60 pages):** read the first pages (abstract/intro/TOC) and skim headings (`grep -n '^#' doc.md`), then read the sections relevant to the question.
-
-**Long (60+ pages):** don't read it all. Use headings and `pdf_search.py` to find the relevant pages, then read just those. Work section by section and tell the user about the scope.
-
-### Step 3: Targeted lookups ("what does theorem 3.2 say?", "what's on page 7?")
-
-1. `pdf_search.py doc.md "theorem 3\.2"` → finds the page and shows context
-2. Read that page from `doc.md` (from its `<!-- page N -->` marker to the next)
-3. Read the next page too when a proof or table continues
-
-## Equations, tables and figures
-
-Text extraction mangles math (e.g. `softmax(QKT ~~*√*~~`) and can't see figures.
-
-- Reconstruct equations from the surrounding text and notation, write them in LaTeX, and say clearly when a formula was garbled in extraction — quote what you can read rather than guessing silently.
-- Describe figures only from their captions and the text that references them; say that the figure itself isn't readable.
-- Check tables against the surrounding prose when columns look misaligned.
-
-Always note page numbers so the user can find things.
-
-## Common patterns
-
-### "Read/summarize this paper"
-```
-1. pdf_parse.py <file>          → triage table + doc.md
-2. Read abstract, intro, conclusion from doc.md
-3. grep -n '^#' doc.md          → section outline
-4. Read key sections
-5. Structured summary with page references
-```
-
-### "Explain the proof on page N"
-```
-1. Read page N (and N+1 for continuations) from doc.md
-2. Reconstruct the math, flagging garbled parts
-3. Walk through the proof step by step
-```
+- Cite page numbers. Say when text came from OCR: it can have misread characters and no headings or tables.
+- Garbled math: rebuild it in LaTeX from `pdf shot` and flag anything unreadable.
+- Encrypted file: set `PDF_PASSWORD=...` before the command.
+- DOCX/PPTX/XLSX need LibreOffice.

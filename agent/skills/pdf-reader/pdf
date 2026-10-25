@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+# pdf: read documents page by page with liteparse, without flooding context.
+# Results are cached per file in /tmp/pi-pdf/; `map` builds the cache, the
+# other commands build it on demand.
+set -euo pipefail
+
+MAX_LINES=120      # per `page` call
+MAX_CHARS=12000    # per `page` call
+MAX_HITS=40        # per `find` call
+MAX_HEADINGS=80    # per `outline` call
+MAX_ROWS=150       # page-table rows shown by `map`
+
+usage() {
+  cat >&2 <<'EOF'
+usage: pdf <command> FILE [args]
+  map     FILE           page table + fast text parse (run this first)
+  ocr     FILE [PAGES]   OCR the pages map marked OCR, or PAGES like 4,9-12
+  outline FILE [DEPTH]   headings with page numbers
+  find    FILE REGEX     case-insensitive search, one line per match
+  page    FILE N [LINE]  read page N (from LINE, at most 120 lines)
+  shot    FILE N         render page N to a PNG and print its path
+EOF
+  exit 2
+}
+die() { echo "pdf: $*" >&2; exit 1; }
+
+[ $# -ge 2 ] || usage
+cmd=$1 src=$2
+shift 2
+[ -f "$src" ] || die "no such file: $src"
+command -v liteparse >/dev/null || die "liteparse is not on PATH"
+src=$(realpath "$src")
+name=$(basename "$src")
+dir=/tmp/pi-pdf/$(basename "${src%.*}" | tr -c 'A-Za-z0-9._\n-' '_')-$(printf %s "$src" | md5sum | cut -c1-6)
+pw=()
+[ -n "${PDF_PASSWORD:-}" ] && pw=(--password "$PDF_PASSWORD")
+
+lp() { liteparse "$1" "$src" -q "${pw[@]}" "${@:2}"; }
+
+# Build pages.tsv, native.md (no OCR) and doc.md (native.md with OCR'd pages
+# swapped in) unless the cache already matches the file.
+build() {
+  local stamp
+  stamp=$(stat -c '%s %Y' "$src")
+  [ "$(cat "$dir/stamp" 2>/dev/null)" = "$stamp" ] && return
+  rm -rf "$dir"
+  mkdir -p "$dir/ocr"
+  # is-complex exits 1 when any page is flagged; only empty output is an error.
+  lp is-complex >"$dir/complex.json" || [ -s "$dir/complex.json" ] || die "is-complex failed on $name"
+  jq -r '.[] | (.layout // {}) as $l | [
+      .page_number, .text_length,
+      (if any(.reasons[]; IN("scanned","no-text","garbled","vector-text","annotation-text")) then "OCR" else "-" end),
+      ($l.column_count // 1),
+      (($l.ruled_table_count // 0) + ($l.text_table_run_count // 0)),
+      ($l.figure_count // 0),
+      ((.reasons + ($l.reasons // [])) | join(",") | if . == "" then "-" else . end)
+    ] | @tsv' "$dir/complex.json" >"$dir/pages.tsv"
+  lp parse --format markdown --no-ocr -o "$dir/native.md"
+  cp "$dir/native.md" "$dir/doc.md"
+  echo "$stamp" >"$dir/stamp"
+}
+
+npages() { wc -l <"$dir/pages.tsv"; }
+
+check_page() {
+  [[ $1 =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le "$(npages)" ] ||
+    die "page must be 1-$(npages), got: $1"
+}
+
+# "4,9-12" -> "4 9 10 11 12"
+expand_pages() {
+  local part a b out=()
+  IFS=, read -ra parts <<<"$1"
+  for part in "${parts[@]}"; do
+    if [[ $part =~ ^([0-9]+)-([0-9]+)$ ]]; then
+      a=${BASH_REMATCH[1]} b=${BASH_REMATCH[2]}
+      [ "$a" -le "$b" ] || die "bad page range: $part"
+      out+=($(seq "$a" "$b"))
+    else
+      out+=("$part")
+    fi
+  done
+  for part in "${out[@]}"; do check_page "$part"; done
+  printf '%s\n' "${out[@]}" | sort -nu | tr '\n' ' '
+}
+
+# Rebuild doc.md: each page comes from ocr/N.md when present, else native.md.
+merge() {
+  awk -v d="$dir/ocr" '
+    function flush(  f, l, r) {
+      pg++; f = d "/" pg ".md"
+      r = (getline l < f)
+      if (r >= 0) { if (r > 0) { print l; while ((getline l < f) > 0) print l }; close(f) }
+      else printf "%s", buf
+      buf = ""
+    }
+    /^-----$/ { flush(); print; next }
+    { buf = buf $0 "\n" }
+    END { flush() }' "$dir/native.md" >"$dir/doc.md.tmp"
+  mv "$dir/doc.md.tmp" "$dir/doc.md"
+}
+
+# Print page N of doc.md.
+page_text() { awk -v n="$1" '/^-----$/{p++; next} p+1==n' "$dir/doc.md"; }
+
+cmd_map() {
+  local n chars ocr
+  n=$(npages)
+  chars=$(awk -F'\t' '{s+=$2} END{print s+0}' "$dir/pages.tsv")
+  ocr=$(awk -F'\t' '$3=="OCR"{print $1}' "$dir/pages.tsv" | paste -sd, -)
+  echo "file: $name | pages: $n | chars: $chars | need OCR: ${ocr:-none}"
+  echo "chars = size of the page's text; ocr = OCR means the page has no usable text until you run pdf ocr"
+  printf 'pg\tchars\tocr\tcols\ttables\tfigs\tflags\n'
+  if [ "$n" -le "$MAX_ROWS" ]; then
+    cat "$dir/pages.tsv"
+  else
+    awk -F'\t' '$3=="OCR" || $4>1 || $5>0 || $6>0' "$dir/pages.tsv" | head -n "$MAX_ROWS"
+    echo "(plain pages hidden: $n pages total, only pages with OCR/columns/tables/figures listed)"
+  fi
+  [ -n "$ocr" ] && echo "next: pdf ocr \"$src\""
+  echo "read: pdf outline <file> | pdf find <file> REGEX | pdf page <file> N"
+}
+
+cmd_ocr() {
+  local pages=() todo=() p sections tmp spec
+  if [ $# -ge 1 ]; then
+    spec=$(expand_pages "$1")
+    read -ra pages <<<"$spec"
+  else
+    read -ra pages <<<"$(awk -F'\t' '$3=="OCR"{printf "%s ", $1}' "$dir/pages.tsv")"
+  fi
+  for p in "${pages[@]}"; do [ -f "$dir/ocr/$p.md" ] || todo+=("$p"); done
+  if [ ${#todo[@]} -eq 0 ]; then
+    echo "nothing to OCR${pages:+ (already done: $(IFS=,; echo "${pages[*]}"))}"
+    return
+  fi
+  echo "OCR ${#todo[@]} page(s): $(IFS=,; echo "${todo[*]}") ..." >&2
+  # One call OCRs the pages in parallel; it returns them in page order,
+  # separated by "-----". Fall back to one call per page if that doesn't hold.
+  tmp=$dir/ocr.tmp.md
+  lp parse --format markdown --target-pages "$(IFS=,; echo "${todo[*]}")" -o "$tmp"
+  sections=$(($(grep -c '^-----$' "$tmp" || true) + 1))
+  if [ "$sections" -eq ${#todo[@]} ]; then
+    awk -v list="${todo[*]}" -v d="$dir/ocr" '
+      BEGIN { split(list, P, " "); i = 1 }
+      /^-----$/ { i++; next }
+      { print > (d "/" P[i] ".md") }' "$tmp"
+    for p in "${todo[@]}"; do touch "$dir/ocr/$p.md"; done
+  else
+    for p in "${todo[@]}"; do lp parse --format markdown --target-pages "$p" -o "$dir/ocr/$p.md"; done
+  fi
+  rm -f "$tmp"
+  merge
+  for p in "${todo[@]}"; do
+    echo "page $p: $(wc -c <"$dir/ocr/$p.md") chars of OCR text"
+  done
+  echo "OCR text can have misread characters and no headings or tables."
+}
+
+# Headings down to DEPTH; by default the deepest level that fits MAX_HEADINGS.
+cmd_outline() {
+  local depth=${1:-0}
+  [[ $depth =~ ^[0-6]$ ]] || die "DEPTH must be 1-6"
+  awk -v max="$MAX_HEADINGS" -v depth="$depth" '
+    function level(  m) { match($0, /^#+/); return RLENGTH }
+    FNR == NR { if (/^#+ /) cnt[level()]++; next }
+    FNR == 1 && !depth {
+      for (d = 1; d <= 6; d++) { sum += cnt[d]; if (sum > max) break; depth = d }
+      if (!depth) depth = 1
+    }
+    /^-----$/ { p++; next }
+    /^#+ / {
+      if (level() > depth) { hidden++; next }
+      n++; if (n <= max) print "p" p+1 ": " $0
+    }
+    END {
+      if (!n) print "no headings; use pdf find or pdf page"
+      if (n > max) print "(" n - max " more headings not shown; use pdf find)"
+      if (hidden) print "(" hidden " deeper headings hidden; pdf outline <file> " depth + 1 " shows more)"
+    }' "$dir/doc.md" "$dir/doc.md"
+}
+
+cmd_find() {
+  [ $# -ge 1 ] && [ -n "$1" ] || die "usage: pdf find FILE REGEX"
+  awk -v re="$1" -v max="$MAX_HITS" '
+    BEGIN { IGNORECASE = 1 }
+    /^-----$/ { p++; next }
+    $0 ~ re {
+      n++; c[p+1]++
+      if (n <= max) print "p" p+1 ": " substr($0, 1, 200)
+    }
+    END {
+      if (!n) { print "no matches"; exit }
+      if (n > max) {
+        printf "(%d matches, %d shown) matches per page:", n, max
+        for (i = 1; i <= p+1; i++) if (i in c) printf " p%d(%d)", i, c[i]
+        print ""
+      }
+    }' "$dir/doc.md"
+}
+
+cmd_page() {
+  [ $# -ge 1 ] || die "usage: pdf page FILE N [LINE]"
+  local n=$1 from=${2:-1} row chars flag text total
+  check_page "$n"
+  [[ $from =~ ^[0-9]+$ ]] && [ "$from" -ge 1 ] || die "LINE must be a number >= 1"
+  row=$(awk -F'\t' -v n="$n" '$1==n' "$dir/pages.tsv")
+  chars=$(cut -f2 <<<"$row")
+  flag=$(cut -f3 <<<"$row")
+  if [ "$flag" = OCR ] && [ ! -f "$dir/ocr/$n.md" ]; then
+    echo "page $n has no usable text layer ($(cut -f7 <<<"$row")); run: pdf ocr \"$src\" $n"
+    return
+  fi
+  text=$(page_text "$n")
+  if ! [[ $text =~ [[:alnum:]] ]]; then
+    if [ "$chars" -gt 0 ]; then
+      # Text that is entirely rotated drops out of markdown; plain text keeps it.
+      echo "--- page $n (plain text; markdown was empty) ---"
+      lp parse --format text --target-pages "$n" | head -n "$MAX_LINES"
+    else
+      echo "page $n is blank"
+    fi
+    return
+  fi
+  total=$(wc -l <<<"$text")
+  [ "$from" -le "$total" ] || die "page $n has only $total lines"
+  [ -f "$dir/ocr/$n.md" ] && echo "(OCR text: may contain misread characters)"
+  awk -v n="$n" -v of="$(npages)" -v f="$src" -v from="$from" -v total="$total" -v ml="$MAX_LINES" -v mc="$MAX_CHARS" '
+    NR < from { next }
+    NR == from { print "--- page " n " of " of ", lines " from "-" total " ---" }
+    { if (NR - from >= ml || used + length($0) > mc && NR > from) { cut = NR; exit }
+      print; used += length($0) + 1 }
+    END {
+      if (cut) print "--- page " n " continues: pdf page \"" f "\" " n " " cut " ---"
+      else print "--- end of page " n " ---"
+    }' <<<"$text"
+}
+
+cmd_shot() {
+  [ $# -ge 1 ] || die "usage: pdf shot FILE N"
+  check_page "$1"
+  lp screenshot --target-pages "$1" -o "$dir/shots" >/dev/null
+  [ -f "$dir/shots/page_$1.png" ] || die "screenshot failed for page $1"
+  echo "$dir/shots/page_$1.png"
+}
+
+case $cmd in
+  map | ocr | outline | find | page | shot) ;;
+  *) usage ;;
+esac
+build
+"cmd_$cmd" "$@"
