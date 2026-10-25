@@ -1,6 +1,6 @@
 ---
 name: coder
-description: Worker specialised for coding, and only coding. Does one coding task in its own isolated git worktree (writes, runs, tests), then reports and stops. Merges back and resolves conflicts only after the user's go-ahead, relayed by the orchestrator with subagent_message.
+description: Worker specialised for coding only. Does one coding task in its own isolated git worktree (writes, runs, tests), then reports and stops. Merges back and resolves conflicts only after the user's go-ahead, relayed by the orchestrator with subagent_message.
 tools: read, write, edit, grep, find, ls, safe_bash, web_search, web_fetch
 subagent_agents: scout, researcher
 thinking: high
