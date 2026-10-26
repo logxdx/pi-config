@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { Bridge, TOKEN_FILE } from "./bridge.ts";
@@ -36,12 +39,134 @@ function tabId(value: string | number): number {
 	return n;
 }
 
+// Latest page text of each tab is also written under here (a file per tab plus tabs.md and a
+// .diff.md), so other agents and subagents can read or grep it. Removed when the session ends.
+const SNAP_DIR = path.join(os.homedir(), ".cache", "pi-browser-tabs", String(process.pid));
+
+interface Seen {
+	url: string;
+	lines: string[];
+}
+
+interface ReadParams {
+	selector?: string;
+	interactive_only?: boolean;
+	max_chars?: number;
+}
+
+// Splits a page read into its header (title, URL, scroll) and body.
+function splitRead(text: string): { header: string; body: string } {
+	const i = text.indexOf("\n\n");
+	return i < 0 ? { header: text, body: "" } : { header: text.slice(0, i), body: text.slice(i + 2) };
+}
+
+// Line diff: trims the common prefix and suffix, then LCS on the middle. Past a size cap it falls
+// back to comparing line sets, which loses ordering but never gets slow.
+function lineDiff(a: string[], b: string[]): { removed: string[]; added: string[] } {
+	let lo = 0;
+	while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
+	let ea = a.length;
+	let eb = b.length;
+	while (ea > lo && eb > lo && a[ea - 1] === b[eb - 1]) {
+		ea--;
+		eb--;
+	}
+	const x = a.slice(lo, ea);
+	const y = b.slice(lo, eb);
+	if (x.length * y.length > 4_000_000) {
+		const sx = new Set(x);
+		const sy = new Set(y);
+		return { removed: x.filter((l) => !sy.has(l)), added: y.filter((l) => !sx.has(l)) };
+	}
+	const w = y.length + 1;
+	const dp = new Uint32Array((x.length + 1) * w);
+	for (let i = x.length - 1; i >= 0; i--) {
+		for (let j = y.length - 1; j >= 0; j--) {
+			dp[i * w + j] = x[i] === y[j] ? dp[(i + 1) * w + j + 1] + 1 : Math.max(dp[(i + 1) * w + j], dp[i * w + j + 1]);
+		}
+	}
+	const removed: string[] = [];
+	const added: string[] = [];
+	let i = 0;
+	let j = 0;
+	while (i < x.length && j < y.length) {
+		if (x[i] === y[j]) {
+			i++;
+			j++;
+		} else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) removed.push(x[i++]);
+		else added.push(y[j++]);
+	}
+	while (i < x.length) removed.push(x[i++]);
+	while (j < y.length) added.push(y[j++]);
+	return { removed, added };
+}
+
+function formatDiff(d: { removed: string[]; added: string[] }): string {
+	return [...d.removed.map((l) => `- ${l}`), ...d.added.map((l) => `+ ${l}`)].join("\n");
+}
+
 const TabParam = Type.String({ description: 'Tab id from browser_tabs, like "t123"' });
 
 export default function (pi: ExtensionAPI) {
 	const bridge = new Bridge();
+	const seen = new Map<string, Seen>();
+	const lastParams = new Map<number, ReadParams>();
 
-	pi.on("session_shutdown", () => bridge.stop());
+	pi.on("session_shutdown", () => {
+		bridge.stop();
+		try {
+			rmSync(SNAP_DIR, { recursive: true, force: true });
+		} catch {}
+	});
+
+	const writeSnap = (name: string, content: string) => {
+		try {
+			mkdirSync(SNAP_DIR, { recursive: true });
+			writeFileSync(path.join(SNAP_DIR, name), content);
+		} catch {}
+	};
+
+	/** Reads a tab; with `diff`, returns only the lines that changed since this tab was last read the same way. */
+	async function readTab(tab: number, p: ReadParams, diff: boolean, signal?: AbortSignal) {
+		const full = (await bridge.call(
+			"read",
+			{ tab, selector: p.selector, interactiveOnly: p.interactive_only, maxChars: p.max_chars },
+			30000,
+			signal,
+		)) as string;
+		const { header, body } = splitRead(full);
+		const url = header.split("\n")[1] ?? "";
+		const key = `${tab}|${p.selector ?? ""}|${p.interactive_only ? 1 : 0}`;
+		const prev = seen.get(key);
+		const lines = body.split("\n");
+		seen.set(key, { url, lines });
+		lastParams.set(tab, p);
+
+		let text = full;
+		let changed: string | undefined;
+		if (prev && prev.url === url) {
+			const d = lineDiff(prev.lines, lines);
+			changed = formatDiff(d);
+			if (diff) {
+				if (!changed) text = `${header}\n\nNo changes since the last read.`;
+				else if (d.added.length + d.removed.length > lines.length * 0.6) text = `${full}\n\n(Most of the page changed, so it is shown in full.)`;
+				else text = `${header}\n\nChanges since the last read (- removed, + added; unchanged lines omitted):\n${changed}`;
+			}
+		} else if (diff) {
+			text = `${full}\n\n(No earlier read of this page to compare with, so it is shown in full.)`;
+		}
+
+		if (!p.selector && !p.interactive_only) {
+			let host = "page";
+			try {
+				host = new URL(url).hostname.replace(/[^a-z0-9.-]/gi, "_") || host;
+			} catch {}
+			const base = `${host}-t${tab}`;
+			writeSnap(`${base}.md`, `<!-- updated ${new Date().toISOString()} -->\n${full}\n`);
+			if (changed !== undefined) writeSnap(`${base}.diff.md`, `${header}\n\n${changed || "(no changes)"}\n`);
+		}
+		return { text };
+	}
 
 	pi.registerTool({
 		name: "browser_tabs",
@@ -53,7 +178,9 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal) {
 			const tabs = (await bridge.call("list", {}, 15000, signal)) as TabInfo[];
-			return ok(formatTabs(tabs), { count: tabs.length });
+			const listing = formatTabs(tabs);
+			writeSnap("tabs.md", `${listing}\n`);
+			return ok(`${listing}\n\nPage snapshots: ${SNAP_DIR}`, { count: tabs.length });
 		},
 	});
 
@@ -66,6 +193,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Read a shared browser tab as text with element refs for clicking and typing.",
 		promptGuidelines: [
 			"Read the tab before acting on it, and read again after anything that changes the page.",
+			"After the first read of a tab, pass diff: true to see only what changed.",
 			"Use selector or interactive_only to keep big pages small.",
 		],
 		parameters: Type.Object({
@@ -75,15 +203,20 @@ export default function (pi: ExtensionAPI) {
 				Type.Boolean({ description: "Only list links, buttons and form fields (much shorter)" }),
 			),
 			max_chars: Type.Optional(Type.Number({ description: "Output cap, default 30000", minimum: 1000 })),
+			diff: Type.Optional(
+				Type.Boolean({
+					description:
+						"Return only the lines that changed since this tab was last read with the same selector and interactive_only (much shorter). Refs stay valid across reads.",
+				}),
+			),
 		}),
-		async execute(_id, p: { tab: string; selector?: string; interactive_only?: boolean; max_chars?: number }, signal) {
-			const text = (await bridge.call(
-				"read",
-				{ tab: tabId(p.tab), selector: p.selector, interactiveOnly: p.interactive_only, maxChars: p.max_chars },
-				30000,
-				signal,
-			)) as string;
-			return ok(text, { tab: p.tab, chars: text.length });
+		async execute(
+			_id,
+			p: { tab: string; selector?: string; interactive_only?: boolean; max_chars?: number; diff?: boolean },
+			signal,
+		) {
+			const { text } = await readTab(tabId(p.tab), p, !!p.diff, signal);
+			return ok(text, { tab: p.tab, chars: text.length, diff: !!p.diff });
 		},
 	});
 
@@ -128,6 +261,9 @@ export default function (pi: ExtensionAPI) {
 			),
 			amount: Type.Optional(Type.Number({ description: "scroll: pixels (default 80% of the window)" })),
 			timeout_ms: Type.Optional(Type.Number({ description: "wait_text: how long to wait (default 10000)" })),
+			show_changes: Type.Optional(
+				Type.Boolean({ description: "Also re-read the tab afterwards and append only what changed since its last read" }),
+			),
 		}),
 		async execute(_id, p: Record<string, any>, signal) {
 			const kind = p.action === "double_click" ? "click" : p.action === "wait_text" ? "wait-text" : p.action;
@@ -153,7 +289,49 @@ export default function (pi: ExtensionAPI) {
 				60000,
 				signal,
 			)) as string;
-			return ok(text, { tab: p.tab, action: p.action });
+			if (!p.show_changes) return ok(text, { tab: p.tab, action: p.action });
+			const after = await readTab(tabId(p.tab), lastParams.get(tabId(p.tab)) ?? {}, true, signal);
+			return ok(`${text}\n---\n${after.text}`, { tab: p.tab, action: p.action });
+		},
+	});
+
+	pi.registerTool({
+		name: "browser_screenshot",
+		label: "Browser Screenshot",
+		description:
+			"Screenshot the visible part of a shared tab. A background tab is briefly brought to the front for the shot " +
+			"and the previous tab is restored. With annotate, every interactive element on screen is boxed and labelled " +
+			"with its browser_read ref. The image is also saved to a file whose path is returned.",
+		promptSnippet: "Take a screenshot of a shared browser tab, optionally labelled with element refs.",
+		promptGuidelines: [
+			"Use browser_read for text and browser_screenshot only when layout, images or charts matter.",
+		],
+		parameters: Type.Object({
+			tab: TabParam,
+			annotate: Type.Optional(Type.Boolean({ description: "Box and label interactive elements with their refs" })),
+		}),
+		async execute(_id, p: { tab: string; annotate?: boolean }, signal) {
+			const shot = (await bridge.call("screenshot", { tab: tabId(p.tab), annotate: p.annotate }, 60000, signal)) as {
+				data: string;
+				mimeType: string;
+				width: number;
+				height: number;
+				labelled: number;
+				info: string;
+			};
+			const file = path.join(SNAP_DIR, `shot-t${tabId(p.tab)}-${Date.now()}.jpg`);
+			try {
+				mkdirSync(SNAP_DIR, { recursive: true });
+				writeFileSync(file, Buffer.from(shot.data, "base64"));
+			} catch {}
+			const note = `${shot.info}\n${shot.width}x${shot.height}${p.annotate ? `, ${shot.labelled} elements labelled` : ""}\nsaved: ${file}`;
+			return {
+				content: [
+					{ type: "text" as const, text: note },
+					{ type: "image" as const, data: shot.data, mimeType: shot.mimeType },
+				],
+				details: { tab: p.tab, file },
+			};
 		},
 	});
 

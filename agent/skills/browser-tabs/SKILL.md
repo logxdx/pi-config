@@ -5,7 +5,7 @@ description: Work in the user's own browser (Helium) and logged-in tabs — read
 
 # browser-tabs
 
-Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_tab`. They talk to an extension inside the user's real browser, not the DevTools protocol, so sites see an ordinary person's browser (no automation flag, no banner).
+Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_screenshot`, `browser_tab`. They talk to an extension inside the user's real browser, not the DevTools protocol, so sites see an ordinary person's browser (no automation flag, no banner).
 
 ## Which browser tool
 
@@ -14,6 +14,7 @@ Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_tab`. They talk t
 | Their logged-in session, a tab they have open, a site that blocks bots | browser-tabs |
 | Scrape, research, or test a page in a clean browser | agent-browser |
 | Console errors, network requests, JS eval | agent-browser (browser-tabs cannot see these) |
+| What the page looks like (layout, images, charts) | `browser_screenshot`, with `annotate: true` to label refs |
 
 ## Access rules
 
@@ -27,7 +28,9 @@ Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_tab`. They talk t
 1. `browser_tabs` — find the tab id (`t123`), or `browser_tab` with `open` and a URL.
 2. `browser_read` — page as text; interactive elements look like `[e5 button "Save"]`. Use `interactive_only` or a `selector` on big pages.
 3. `browser_act` — `click`, `type`, `press`, `select`, `check`, `scroll`, `wait_text` using refs.
-4. `browser_read` again after anything that changes the page. Refs go stale after navigation and an unknown ref errors rather than guessing.
+4. `browser_read` again after anything that changes the page, with `diff: true` to get only the changed lines (or `show_changes: true` on `browser_act`). Refs go stale after navigation and an unknown ref errors rather than guessing.
+
+Latest page text per tab is also saved as files (`tabs.md`, `<host>-t<id>.md`, `.diff.md`); each tool's output or the README gives the directory. Use them to hand a page to a subagent.
 
 `browser_tab`: `launch` starts the browser if it isn't running, `open` / `navigate` / `back` / `forward` / `reload` / `focus` / `close`.
 
