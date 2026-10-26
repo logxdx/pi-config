@@ -293,8 +293,27 @@ if (!globalThis.__pi) {
 		await sleep(150);
 	};
 
+	// Boxes of the interactive elements currently on screen, for annotated screenshots. Drawn onto
+	// the captured bitmap by background.js, never into the page.
+	const rects = () => {
+		const out = [];
+		const visit = (root) => {
+			for (const el of root.querySelectorAll("*")) {
+				if (el.shadowRoot) visit(el.shadowRoot);
+				if (!isInteractive(el) || !visible(el)) continue;
+				const r = el.getBoundingClientRect();
+				if (r.width < 2 || r.height < 2 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
+				out.push({ ref: refOf(el), x: r.left, y: r.top, w: r.width, h: r.height });
+			}
+		};
+		visit(document);
+		return { width: innerWidth, height: innerHeight, rects: out.slice(0, 150) };
+	};
+
 	const run = async (cmd) => {
 		switch (cmd.kind) {
+			case "rects":
+				return rects();
 			case "read": {
 				const root = cmd.selector ? document.querySelector(cmd.selector) : document.body;
 				if (!root) throw new Error(`No element matches selector "${cmd.selector}"`);

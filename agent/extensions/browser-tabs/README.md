@@ -5,11 +5,18 @@ Browser tools for pi that work in your real browser (built and tested with Heliu
 | Tool | What it does |
 |---|---|
 | `browser_tabs` | List open tabs (title, URL, whether pi may use each) |
-| `browser_read` | Read a tab as text, with refs like `e5` on links, buttons and fields |
+| `browser_read` | Read a tab as text, with refs like `e5` on links, buttons and fields. `diff: true` returns only what changed since the last read |
+| `browser_screenshot` | Screenshot the visible part of a tab; `annotate` boxes and labels interactive elements with their refs |
 | `browser_act` | click, double_click, hover, type, press, select, check, uncheck, scroll, wait_text |
 | `browser_tab` | launch the browser, open, navigate, back, forward, reload, focus, close |
 
 The companion skill `skills/browser-tabs` tells the agent when to use these, and when to use `agent-browser` instead.
+
+## Changes and snapshot files
+
+`browser_read` with `diff: true` (and `browser_act` with `show_changes: true`) compares the page text with the previous read of the same tab and returns only the removed (`-`) and added (`+`) lines. Refs are stable across reads, so a line in the diff can be acted on directly. If the tab navigated, or most of the page changed, the full page is returned instead.
+
+Whole-page reads are also written to `~/.cache/pi-browser-tabs/<pi pid>/`: `tabs.md` (from `browser_tabs`), `<host>-t<id>.md` (latest read), `<host>-t<id>.diff.md` (latest changes) and `shot-*.jpg`. Other agents and subagents can read or grep them. The files only update when pi reads or acts on a tab (there is no background polling), and the directory is deleted when the session ends.
 
 ## Setup
 
@@ -54,6 +61,7 @@ The bridge (`bridge.ts`) listens on loopback only. Requests need the shared toke
 
 - Events from content scripts have no user activation. Most sites accept them; some payment widgets and anti-bot checks can tell. The agent is told to hand those steps to you.
 - Only the top page and same-origin iframes are read.
-- No screenshots, console or network access. Use `agent-browser` for debugging.
+- Screenshots cover the visible viewport only, via `chrome.tabs.captureVisibleTab`: a background tab is switched to briefly (and the previous tab restored), and the window must not be minimized. After updating the extension, reload it at `helium://extensions`.
+- No console or network access. Use `agent-browser` for debugging.
 - Up to 10 pi sessions at a time; an 11th gets a clear "all ports in use" error. A subagent is its own session, so it cannot reuse tabs its parent opened unless you share them.
 - If the extension's service worker is asleep, the first call can take a few seconds while it wakes.

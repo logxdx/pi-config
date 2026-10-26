@@ -191,6 +191,54 @@ const ops = {
 		return inPage(tab, { kind: "read", selector, interactiveOnly, maxChars });
 	},
 
+	// captureVisibleTab only sees the active tab of a window, so a background tab is brought to the
+	// front for the shot and the previously active tab is restored. No DevTools protocol involved.
+	async screenshot({ tab, annotate, maxWidth }, session) {
+		await requireControl(tab, session);
+		const target = await chrome.tabs.get(tab);
+		let restore;
+		if (!target.active) {
+			const [prev] = await chrome.tabs.query({ active: true, windowId: target.windowId });
+			restore = prev?.id;
+			await chrome.tabs.update(tab, { active: true });
+			await sleep(250);
+		}
+		try {
+			const shot = annotate ? await inPage(tab, { kind: "rects" }) : null;
+			const dataUrl = await chrome.tabs.captureVisibleTab(target.windowId, { format: "png" });
+			const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+			const scale = Math.min(1, (maxWidth || 1568) / bitmap.width);
+			const w = Math.round(bitmap.width * scale);
+			const h = Math.round(bitmap.height * scale);
+			const canvas = new OffscreenCanvas(w, h);
+			const ctx = canvas.getContext("2d");
+			ctx.drawImage(bitmap, 0, 0, w, h);
+			if (shot) {
+				const k = w / shot.width;
+				ctx.font = "bold 12px sans-serif";
+				ctx.textBaseline = "top";
+				for (const r of shot.rects) {
+					const x = r.x * k, y = r.y * k;
+					ctx.strokeStyle = "#e8710a";
+					ctx.lineWidth = 1.5;
+					ctx.strokeRect(x, y, r.w * k, r.h * k);
+					const tw = ctx.measureText(r.ref).width + 6;
+					ctx.fillStyle = "#e8710a";
+					ctx.fillRect(x, Math.max(0, y - 14), tw, 14);
+					ctx.fillStyle = "#fff";
+					ctx.fillText(r.ref, x + 3, Math.max(0, y - 14) + 1);
+				}
+			}
+			const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+			const bytes = new Uint8Array(await blob.arrayBuffer());
+			let bin = "";
+			for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+			return { data: btoa(bin), mimeType: "image/jpeg", width: w, height: h, labelled: shot?.rects.length ?? 0, info: await tabLine(tab) };
+		} finally {
+			if (restore !== undefined) await chrome.tabs.update(restore, { active: true }).catch(() => {});
+		}
+	},
+
 	async act({ tab, ...cmd }, session) {
 		await requireControl(tab, session);
 		const result = await inPage(tab, cmd);
