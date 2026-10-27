@@ -9,6 +9,10 @@ agent/sessions/
 agent/rewind/
 **/artifacts/
 
+# Pi itself: launcher and release bundles written by the pi.dev installer
+agent/bin/
+agent/install/
+
 # Package installs managed by pi, rebuilt from settings.json "packages"
 agent/git/
 agent/npm/
@@ -18,3 +22,6 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+
+# Claude Code worktrees
+.claude/worktrees/
