@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "1.2.0",
+  "lastChangelogVersion": "1.4.0",
   "terminal": {
     "showImages": false,
     "imageWidthCells": 60,
@@ -62,6 +62,6 @@
       }
     }
   },
-  "defaultProvider": "llama.cpp",
-  "defaultModel": "qwen3.5-2b"
+  "defaultProvider": "openrouter",
+  "defaultModel": "z-ai/glm-5.3-flash"
 }

@@ -16,7 +16,7 @@
           "reasoning": false
         },
         "qwen3.5-2b": {
-          "contextWindow": 80000,
+          "contextWindow": 122880,
           "maxTokens": 32768,
           "reasoning": false
         },
@@ -27,6 +27,18 @@
         "lfm2.5-24b": {
           "contextWindow": 65536,
           "maxTokens": 16384
+        },
+        "bonsai2-2b-ptq1": {
+          "contextWindow": 131072,
+          "maxTokens": 32768
+        },
+        "bonsai2-4b-ptq1": {
+          "contextWindow": 122880,
+          "maxTokens": 32768
+        },
+        "bonsai2-9b-ptq1": {
+          "contextWindow": 98304,
+          "maxTokens": 32768
         }
       }
     }

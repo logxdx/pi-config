@@ -30,7 +30,7 @@ Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_screenshot`, `bro
 3. `browser_act` — `click`, `type`, `press`, `select`, `check`, `scroll`, `wait_text` using refs.
 4. `browser_read` again after anything that changes the page, with `diff: true` to get only the changed lines (or `show_changes: true` on `browser_act`). Refs go stale after navigation and an unknown ref errors rather than guessing.
 
-Latest page text per tab is also saved as files (`tabs.md`, `<host>-t<id>.md`, `.diff.md`); each tool's output or the README gives the directory. Use them to hand a page to a subagent.
+Latest page text per tab is also saved as files (`tabs.md`, `<host>-t<id>.md`, `.diff.md`); `browser_tabs` prints the directory. Use them to hand a page to a subagent.
 
 `browser_tab`: `launch` starts the browser if it isn't running, `open` / `navigate` / `back` / `forward` / `reload` / `focus` / `close`.
 
@@ -45,5 +45,5 @@ Latest page text per tab is also saved as files (`tabs.md`, `<host>-t<id>.md`, `
 
 - Clicks and keystrokes are synthetic DOM events at human pace. Most sites accept them; some payment widgets and strict anti-bot checks can tell the difference. Ask the user to do that step.
 - Only the top page and same-origin iframes are read. Cross-origin iframes (embedded payment forms, some captchas) are invisible.
-- Text only: no screenshots.
+- `browser_screenshot` captures only the visible viewport, not the full page, and briefly switches to a background tab to do it. Prefer `browser_read` for text; use a screenshot when layout, images or charts matter.
 - If the bridge is not connected, tell the user: Helium must be running with the extension loaded (`extensions/browser-tabs/README.md`). `browser_tab` `launch` starts the browser.
