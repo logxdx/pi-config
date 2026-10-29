@@ -9,6 +9,10 @@ import { Bridge, TOKEN_FILE } from "./bridge.ts";
 const BROWSER_BIN = process.env.PI_BROWSER_BIN || "helium-browser";
 const LAUNCH_WAIT_MS = 25000;
 
+// Deferred: hidden until the browser-tabs skill loads it with tool_search. A --tools allowlist only
+// activates direct tools, so stay direct when one is given (e.g. subagents with a tools: list).
+const EXPOSURE = process.argv.some((a) => a === "--tools" || a === "-t" || a.startsWith("--tools=")) ? "direct" : "deferred";
+
 interface TabInfo {
 	id: number;
 	windowId: number;
@@ -171,6 +175,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "browser_tabs",
 		label: "Browser Tabs",
+		exposure: EXPOSURE,
 		description:
 			"List the tabs open in the user's real browser (Helium) with title, URL and whether pi may use each one. " +
 			"Works through an extension, not the DevTools protocol, so sites see an ordinary browser.",
@@ -187,6 +192,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "browser_read",
 		label: "Browser Read",
+		exposure: EXPOSURE,
 		description:
 			"Read a shared tab as text. Interactive elements are shown as [e5 button \"Save\"] and the ref (e5) is what " +
 			"browser_act takes. Refs go stale after navigation or big page changes, so read again.",
@@ -223,6 +229,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "browser_act",
 		label: "Browser Act",
+		exposure: EXPOSURE,
 		description:
 			"Act on a shared tab with human-paced input: click, hover, type, press a key, select an option, check/uncheck, " +
 			"scroll, or wait for text. Returns the tab's title and URL afterwards. Input is synthetic DOM events, so " +
@@ -298,6 +305,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "browser_screenshot",
 		label: "Browser Screenshot",
+		exposure: EXPOSURE,
 		description:
 			"Screenshot the visible part of a shared tab. A background tab is briefly brought to the front for the shot " +
 			"and the previous tab is restored. With annotate, every interactive element on screen is boxed and labelled " +
@@ -338,6 +346,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "browser_tab",
 		label: "Browser Tab",
+		exposure: EXPOSURE,
 		description:
 			"Manage tabs: launch the browser, open a new tab (put in a blue \"Pi\" tab group and usable right away), " +
 			"navigate, go back/forward, reload, focus, or close a tab pi opened. To use a tab the user already has " +

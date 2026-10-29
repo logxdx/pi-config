@@ -5,7 +5,7 @@ description: Work in the user's own browser (Helium) and logged-in tabs — read
 
 # browser-tabs
 
-Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_screenshot`, `browser_tab`. They talk to an extension inside the user's real browser, not the DevTools protocol, so sites see an ordinary person's browser (no automation flag, no banner).
+Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_screenshot`, `browser_tab`. They are not loaded at the start of a session: call `tool_search` with query `browser` and limit `5`, and they are available from your next call (skip this if they are already in your tool list). They talk to an extension inside the user's real browser, not the DevTools protocol, so sites see an ordinary person's browser (no automation flag, no banner).
 
 ## Which browser tool
 

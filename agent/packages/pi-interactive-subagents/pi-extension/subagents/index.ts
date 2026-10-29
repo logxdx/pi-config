@@ -797,6 +797,10 @@ function updateWidget() {
  */
 const SUBAGENT_CONTROL_TOOLS = ["ask_question"] as const;
 
+// Deferred: hidden until the subagents skill loads it with tool_search. A --tools allowlist only
+// activates direct tools, so stay direct when one is given (e.g. subagents with a tools: list).
+const EXPOSURE = process.argv.some((a) => a === "--tools" || a === "-t" || a.startsWith("--tools=")) ? "direct" : "deferred";
+
 /**
  * Build the child --tools allowlist.
  *
@@ -1703,6 +1707,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
   pi.registerTool({
       name: "subagent",
       label: "Subagent",
+      exposure: EXPOSURE,
       description:
         "Spawn a sub-agent in a dedicated terminal multiplexer pane. " +
         "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
@@ -1972,6 +1977,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
   pi.registerTool({
       name: "subagents_list",
       label: "List Subagents",
+      exposure: EXPOSURE,
       description:
         "List all available subagent definitions. " +
         "Scans project-local .pi/agents/ and global ~/.pi/agent/agents/. " +
@@ -2027,6 +2033,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
   pi.registerTool({
       name: "subagent_message",
       label: "Message Subagent",
+      exposure: EXPOSURE,
       description:
         "Send a message to a subagent by name. Names are unique within your session and persist after a subagent finishes, " +
         "so the SAME name works whether the subagent is running or finished: if it is still running, your message steers its live session; " +
