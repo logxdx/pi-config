@@ -1,6 +1,5 @@
 {
   "lastChangelogVersion": "1.4.0",
-  "defaultTools": ["+tool_search"],
   "terminal": {
     "showImages": false,
     "imageWidthCells": 60,

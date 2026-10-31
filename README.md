@@ -10,9 +10,7 @@ My `~/.pi` folder for [pi](https://pi.dev): settings, models, system prompt, sub
 | `agent/agents/` | Subagent definitions (coder, researcher, scout, worker) |
 | `agent/extensions/` | ask-user-question, bash-guard, browser-tabs, custom-header, output-guard, prompt-snippets, rewind, session-namer, subagents-resume, trace, web-fetch, web-search |
 | `agent/packages/` | pi-interactive-subagents (tmux subagents), pi-observational-memory |
-| `agent/skills/` | agent-browser, analyze-sessions, browser-tabs, pdf-reader, subagents, visualize, web, youtube-transcript |
-
-Sessions start with only `read`, `bash`, `edit`, `write`, `ask_user_question` and pi's built-in `tool_search`. The web, browser and subagent tools register with `exposure: "deferred"`; the `web`, `browser-tabs` and `subagents` skills tell the model which `tool_search` query loads them. A process started with `--tools` (subagents with a `tools:` list) registers them `direct` instead, because a `--tools` allowlist only activates direct tools.
+| `agent/skills/` | agent-browser, analyze-sessions, browser-tabs, pdf-reader, visualize, youtube-transcript |
 
 ## Set up on another machine (runbook for an AI agent)
 

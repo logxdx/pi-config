@@ -9,11 +9,6 @@ import TurndownService from "turndown";
 const USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const DEFAULT_TIMEOUT_MS = 30000;
-
-// Deferred: hidden until the web skill loads it with tool_search. A --tools allowlist only
-// activates direct tools, so stay direct when one is given (e.g. subagents with a tools: list).
-const EXPOSURE = process.argv.some((a) => a === "--tools" || a === "-t" || a.startsWith("--tools=")) ? "direct" : "deferred";
-
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
 const MIN_USEFUL_CONTENT = 500;
@@ -647,7 +642,6 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "web_fetch",
 		label: "Web Fetch",
-		exposure: EXPOSURE,
 		description:
 			"Fetch a web page and extract readable content as clean markdown. Uses the TinyFish Fetch API first (renders JS-heavy pages and PDFs), then Readability + Turndown locally, then Jina Reader. Handles PDFs and plain text.",
 		promptSnippet:

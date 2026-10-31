@@ -5,10 +5,6 @@ import { searchWithFallback, type Recency, type SearchResult } from "./providers
 
 const SNIPPET_CHARS = 500;
 
-// Deferred: hidden until the web skill loads it with tool_search. A --tools allowlist only
-// activates direct tools, so stay direct when one is given (e.g. subagents with a tools: list).
-const EXPOSURE = process.argv.some((a) => a === "--tools" || a === "-t" || a.startsWith("--tools=")) ? "direct" : "deferred";
-
 interface SearchParams {
 	query: string;
 	count?: number;
@@ -40,7 +36,6 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
-		exposure: EXPOSURE,
 		description:
 			"Search the web. Returns title, URL, date and snippet per result. " +
 			"Tries TinyFish, LangSearch, Exa, then a keyless metasearch, falling back automatically when a provider fails.",
