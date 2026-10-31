@@ -8,7 +8,7 @@ My `~/.pi` folder for [pi](https://pi.dev): settings, models, system prompt, sub
 | `agent/models.json` | Per-model context window / max-token overrides (llama.cpp models) |
 | `agent/SYSTEM.md` | System prompt |
 | `agent/agents/` | Subagent definitions (coder, researcher, scout, worker) |
-| `agent/extensions/` | ask-user-question, bash-guard, browser-tabs, custom-header, output-guard, prompt-snippets, rewind, session-namer, subagents-resume, trace, web-fetch, web-search |
+| `agent/extensions/` | ask-user-question, bash-background, bash-guard, browser-tabs, custom-header, output-guard, prompt-snippets, rewind, session-namer, subagents-resume, trace, web-fetch, web-search |
 | `agent/packages/` | pi-interactive-subagents (tmux subagents), pi-observational-memory |
 | `agent/skills/` | agent-browser, analyze-sessions, browser-tabs, pdf-reader, visualize, youtube-transcript |
 
