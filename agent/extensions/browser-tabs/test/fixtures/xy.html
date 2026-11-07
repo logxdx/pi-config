@@ -1,0 +1,7 @@
+<!doctype html><title>XY</title>
+<style>html,body{margin:0}#pad{width:1100px;height:700px;background:#def}</style>
+<div id=pad></div>
+<script>
+const log = (e) => fetch(`/log?e=${encodeURIComponent(e)}`);
+document.getElementById("pad").addEventListener("click", (e) => log(`xy=${Math.round(e.clientX)},${Math.round(e.clientY)}`));
+</script>

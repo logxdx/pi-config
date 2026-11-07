@@ -2,9 +2,30 @@
 // APIs (tabs, scripting). It never uses chrome.debugger, so the browser is not put in
 // automation mode: no banner, no navigator.webdriver, no DevTools protocol attached.
 
+// Chromium: a service worker, so the helper files are imported. Firefox: a background page that lists them as
+// scripts in its manifest (see build.mjs), where importScripts does not exist.
+if (typeof importScripts === "function") importScripts("frames.js", "debug.js");
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const cfg = () => chrome.storage.local.get({ token: "", port: 17420, allowAll: false });
+// An optional preset.js (used by the test copies) holds the bridge token and port, so nothing needs pasting. Settings saved in the options page win over the preset.
+if (typeof importScripts === "function") {
+	try {
+		importScripts("preset.js");
+	} catch {}
+}
+const PRESET = globalThis.PI_PRESET ?? {};
+const cfg = async () => {
+	const c = await chrome.storage.local.get({ token: "", port: 0, allowAll: false });
+	return { token: c.token || PRESET.token || "", port: c.port || PRESET.port || 17420, allowAll: c.allowAll };
+};
+// Which browser this copy runs in. Sent with every request: the bridge serves one kind only (PI_BROWSER_CLIENT, default chromium).
+const CLIENT = typeof browser !== "undefined" && browser.runtime?.getBrowserInfo ? "firefox" : "chromium";
+const CLIENT_ID = `${CLIENT}/${chrome.runtime.getManifest().version}`;
+// Toolbar button: chrome.action (MV3) or chrome.browserAction (Firefox MV2).
+const action = chrome.action || chrome.browserAction;
+// Tab groups exist in Chromium and recent Firefox; without them tabs are marked with the badge only.
+const hasGroups = !!(chrome.tabGroups && chrome.tabs.group);
 // Each pi session runs its own bridge on a port in [port, port + PORT_COUNT). Keep in sync with bridge.ts.
 const PORT_COUNT = 10;
 const getSet = async (key) => new Set((await chrome.storage.session.get({ [key]: [] }))[key]);
@@ -22,9 +43,9 @@ const mayControl = async (tabId, session) => {
 	return (await getSet("shared")).has(tabId) || (await getOwned())[tabId] === session;
 };
 
-const setBadge = (tabId, on) => {
-	chrome.action.setBadgeText({ tabId, text: on ? "pi" : "" }).catch(() => {});
-	chrome.action.setBadgeBackgroundColor({ tabId, color: "#1a73e8" }).catch(() => {});
+const setBadge = (tabId, on, text = "pi", color = "#1a73e8") => {
+	Promise.resolve(action.setBadgeText({ tabId, text: on ? text : "" })).catch(() => {});
+	Promise.resolve(action.setBadgeBackgroundColor({ tabId, color })).catch(() => {});
 };
 
 // A shared tab also gets its own green "shared" tab group: native browser UI that stays in
@@ -32,6 +53,7 @@ const setBadge = (tabId, on) => {
 // A tab already in one of the user's own groups keeps that group and only gets the badge.
 const markShared = async (tabId, on) => {
 	setBadge(tabId, on);
+	if (!hasGroups) return;
 	try {
 		const tab = await chrome.tabs.get(tabId);
 		const none = chrome.tabGroups.TAB_GROUP_ID_NONE;
@@ -58,7 +80,7 @@ const toggleShare = async (tab) => {
 	await markShared(tab.id, shared.has(tab.id));
 };
 
-chrome.action.onClicked.addListener(toggleShare);
+action.onClicked.addListener(toggleShare);
 
 // Keyboard shortcuts; rebind them on the browser's extension shortcuts page.
 chrome.commands.onCommand.addListener(async (command, tab) => {
@@ -77,6 +99,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 	if (shared.delete(tabId)) await putSet("shared", shared);
 	const owned = await getOwned();
 	if (delete owned[tabId]) await putOwned(owned);
+	forgetFrames(tabId);
+	forgetDebug(tabId);
 });
 
 const requireControl = async (tabId, session) => {
@@ -116,24 +140,6 @@ const waitLoaded = (tabId, timeout = 20000) =>
 		chrome.tabs.onUpdated.addListener(listener);
 	});
 
-const inPage = async (tabId, cmd) => {
-	await chrome.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
-	const [res] = await chrome.scripting.executeScript({
-		target: { tabId },
-		args: [cmd],
-		func: async (c) => {
-			try {
-				return { ok: true, value: await globalThis.__pi.run(c) };
-			} catch (e) {
-				return { ok: false, error: String((e && e.message) || e) };
-			}
-		},
-	});
-	if (!res?.result) throw new Error("The page did not respond.");
-	if (!res.result.ok) throw new Error(res.result.error);
-	return res.result.value;
-};
-
 const historyStep = async (tabId, delta) => {
 	const before = (await chrome.tabs.get(tabId)).url;
 	try {
@@ -155,6 +161,7 @@ const tabLine = async (tabId) => {
 };
 
 const groupOwned = async (tabId) => {
+	if (!hasGroups) return setBadge(tabId, true, "own", "#188038"); // marker the page cannot see
 	const { piGroup } = await chrome.storage.session.get("piGroup");
 	let groupId;
 	if (piGroup !== undefined) {
@@ -188,7 +195,7 @@ const ops = {
 
 	async read({ tab, selector, interactiveOnly, maxChars }, session) {
 		await requireControl(tab, session);
-		return inPage(tab, { kind: "read", selector, interactiveOnly, maxChars });
+		return readTree(tab, { kind: "read", selector, interactiveOnly, maxChars });
 	},
 
 	// captureVisibleTab only sees the active tab of a window, so a background tab is brought to the
@@ -204,7 +211,7 @@ const ops = {
 			await sleep(250);
 		}
 		try {
-			const shot = annotate ? await inPage(tab, { kind: "rects" }) : null;
+			const shot = annotate ? await rectsTree(tab) : null;
 			const dataUrl = await chrome.tabs.captureVisibleTab(target.windowId, { format: "png" });
 			const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
 			const scale = Math.min(1, (maxWidth || 1568) / bitmap.width);
@@ -241,11 +248,42 @@ const ops = {
 
 	async act({ tab, ...cmd }, session) {
 		await requireControl(tab, session);
-		const result = await inPage(tab, cmd);
+		const where = {};
+		let result = await actIn(tab, cmd, where);
+		if (cmd.kind === "screenpos") {
+			// Add where the frame sits in the window, so the caller gets viewport coordinates of the tab.
+			const o = where.frameId ? await frameOffset(tab, where.frameId) : { x: 0, y: 0 };
+			const v = JSON.parse(result);
+			result = JSON.stringify({ ...v, cx: v.cx + o.x, cy: v.cy + o.y });
+		}
 		await sleep(400);
 		const now = await chrome.tabs.get(tab);
 		if (now.status === "loading") await waitLoaded(tab);
 		return `${result}\n---\n${await tabLine(tab)}`;
+	},
+
+	// Version and features, so pi can tell an old copy of this extension from this one.
+	async info() {
+		return {
+			version: chrome.runtime.getManifest().version,
+			features: ["frames", "closed-shadow", "widgets", "upload", "screenpos", "console"],
+			client: CLIENT,
+			tabGroups: hasGroups,
+			closedShadow: CLIENT === "firefox" || !!globalThis.chrome?.dom,
+		};
+	},
+
+	// Console messages and failed requests of one tab; capture starts with the first call for that tab.
+	async console({ tab, level, limit, clear, reload }, session) {
+		await requireControl(tab, session);
+		const fresh = await enableDebug(tab);
+		if (reload) {
+			await chrome.tabs.reload(tab);
+			await waitLoaded(tab);
+			await sleep(300);
+		}
+		const out = await readDebug(tab, { level, limit, clear });
+		return { ...out, started: fresh && !reload, info: await tabLine(tab) };
 	},
 
 	async tab({ action, tab, url, focus }, session) {
@@ -306,7 +344,7 @@ const handle = async (cmd, port) => {
 	}
 	await fetch(`http://127.0.0.1:${port}/result`, {
 		method: "POST",
-		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Pi-Client": CLIENT_ID },
 		body: JSON.stringify(body),
 	}).catch(() => {});
 };
@@ -314,11 +352,11 @@ const handle = async (cmd, port) => {
 // The bridge holds a poll up to 20s, so anything much longer means a dead connection.
 const POLL_TIMEOUT_MS = 30000;
 
-// Ports whose bridge rejected our token; a red "!" on the toolbar button shows it, since it is otherwise invisible.
+// Ports whose bridge rejected our token or our browser kind; a red "!" on the toolbar button shows it, since it is otherwise invisible.
 const unauthorized = new Set();
 const showAuthBadge = () => {
-	chrome.action.setBadgeText({ text: unauthorized.size ? "!" : "" }).catch(() => {});
-	chrome.action.setBadgeBackgroundColor({ color: "#d93025" }).catch(() => {});
+	Promise.resolve(action.setBadgeText({ text: unauthorized.size ? "!" : "" })).catch(() => {});
+	Promise.resolve(action.setBadgeBackgroundColor({ color: "#d93025" })).catch(() => {});
 };
 
 // One poll loop per port in the range: a port with no bridge just refuses connections and is retried.
@@ -338,10 +376,10 @@ const pollPort = async (port) => {
 				// Any extension API call resets the service worker's idle timer.
 				await chrome.runtime.getPlatformInfo();
 				const res = await fetch(`http://127.0.0.1:${port}/poll`, {
-					headers: { Authorization: `Bearer ${cur.token}` },
+					headers: { Authorization: `Bearer ${cur.token}`, "X-Pi-Client": CLIENT_ID },
 					signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
 				});
-				const rejected = res.status === 401;
+				const rejected = res.status === 401 || res.status === 403;
 				if (rejected !== unauthorized.has(port)) {
 					if (rejected) unauthorized.add(port);
 					else unauthorized.delete(port);

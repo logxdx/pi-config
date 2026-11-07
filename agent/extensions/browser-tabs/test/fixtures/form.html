@@ -1,0 +1,15 @@
+<!doctype html><title>Form</title><h1>Form page</h1>
+<form id=f onsubmit="return false">
+<label>Your name <input id=name></label>
+<label>Colour <select id=colour><option value=r>Red</option><option value=g>Green</option><option value=b>Blue</option></select></label>
+<label><input type=checkbox id=agree> I agree</label>
+<button type=button id=go>Save settings</button>
+</form>
+<script>
+const log = (e) => fetch(`/log?e=${encodeURIComponent(e)}`);
+const q = (i) => document.getElementById(i);
+q("go").addEventListener("click", () => log(`save name=${q("name").value} colour=${q("colour").value} agree=${q("agree").checked}`));
+q("colour").addEventListener("change", () => log(`colour=${q("colour").value}`));
+q("agree").addEventListener("change", () => log(`agree=${q("agree").checked}`));
+log(`webdriver=${navigator.webdriver}`);
+</script>

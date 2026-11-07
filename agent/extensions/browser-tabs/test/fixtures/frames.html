@@ -1,0 +1,7 @@
+<!doctype html><title>Frames</title><h1>Top page</h1>
+<button onclick="fetch(`/log?e=top-click`)">Top button</button>
+<p>Before frame</p>
+<iframe src="http://localhost:__B__/inner.html" name="pay" style="width:420px;height:260px"></iframe>
+<iframe srcdoc="<h2>Srcdoc frame</h2><button onclick=&quot;fetch(`http://127.0.0.1:__A__/log?e=srcdoc-click`)&quot;>Srcdoc button</button>" style="width:300px;height:100px"></iframe>
+<iframe src="/hidden.html" style="display:none"></iframe>
+<p>After frame</p>

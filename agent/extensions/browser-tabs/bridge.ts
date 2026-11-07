@@ -11,7 +11,12 @@ export const PORT_COUNT = 10;
 // Identifies this pi process to the extension, so tabs a session opens stay its own. Stable
 // across /new and /resume, which keep the process.
 const SESSION = String(process.pid);
-export const TOKEN_FILE = path.join(os.homedir(), ".config", "pi-browser-tabs", "token");
+// PI_BROWSER_TOKEN_FILE lets tests use a throwaway token instead of the real one.
+export const TOKEN_FILE = process.env.PI_BROWSER_TOKEN_FILE || path.join(os.homedir(), ".config", "pi-browser-tabs", "token");
+// The one browser kind this bridge serves: the extension names itself in `X-Pi-Client: <kind>/<version>` on every
+// request. Defaults to the Chromium extension (Helium); "any" disables the check. An old 0.1.0 extension sends no
+// header and is let through as chromium.
+export const CLIENT_KIND = (process.env.PI_BROWSER_CLIENT || "chromium").toLowerCase();
 
 const POLL_HOLD_MS = 20000;
 const CONNECTED_WITHIN_MS = 3000;
@@ -63,6 +68,7 @@ export class Bridge {
 	private pending = new Map<string, Pending>();
 	private lastPoll = 0;
 	private port = BASE_PORT;
+	private turnedAway: { client: string; at: number } | undefined;
 
 	connected(): boolean {
 		return this.waiters.length > 0 || Date.now() - this.lastPoll < CONNECTED_WITHIN_MS;
@@ -117,8 +123,12 @@ export class Bridge {
 		await this.start();
 		if (!this.connected()) await this.waitConnected(WAKE_WAIT_MS);
 		if (!this.connected()) {
+			const other =
+				this.turnedAway && Date.now() - this.turnedAway.at < 60000
+					? ` (A ${this.turnedAway.client} copy of the extension is polling, but this bridge serves only ${CLIENT_KIND}.)`
+					: "";
 			throw new Error(
-				"The Pi Browser Bridge extension is not connected. Check that Helium is running with the extension " +
+				`The Pi Browser Bridge extension is not connected.${other} Check that Helium is running with the extension ` +
 					`loaded and its options token matches ${TOKEN_FILE} (see extensions/browser-tabs/README.md). ` +
 					'To start the browser, use browser_tab with action "launch".',
 			);
@@ -174,6 +184,12 @@ export class Bridge {
 	private route(req: http.IncomingMessage, res: http.ServerResponse) {
 		if (!this.authorized(req)) {
 			res.writeHead(401).end();
+			return;
+		}
+		const client = String(req.headers["x-pi-client"] ?? "chromium").split("/")[0].toLowerCase() || "chromium";
+		if (CLIENT_KIND !== "any" && client !== CLIENT_KIND) {
+			this.turnedAway = { client, at: Date.now() };
+			res.writeHead(403, { "Content-Type": "text/plain" }).end(`This bridge serves ${CLIENT_KIND} only, not ${client}.`);
 			return;
 		}
 		const url = new URL(req.url ?? "/", "http://localhost");

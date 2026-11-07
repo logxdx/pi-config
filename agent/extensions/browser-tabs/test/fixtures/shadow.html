@@ -1,0 +1,8 @@
+<!doctype html><title>Shadow</title><h1>Shadow page</h1>
+<my-widget></my-widget>
+<script>
+class W extends HTMLElement { constructor(){ super(); const r = this.attachShadow({mode:"closed"});
+ r.innerHTML = `<p>Closed root text</p><button id=b>Closed shadow button</button><input aria-label="Closed shadow input">`;
+ r.getElementById("b").addEventListener("click", (e) => fetch(`/log?e=closed-click&trusted=${e.isTrusted}`)); } }
+customElements.define("my-widget", W);
+</script>

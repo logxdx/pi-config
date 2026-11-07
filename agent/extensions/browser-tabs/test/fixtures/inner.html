@@ -1,0 +1,5 @@
+<!doctype html><title>Inner</title><h2>Inner frame heading</h2>
+<label>Inner name <input id=n name=n></label>
+<button onclick="fetch(`http://127.0.0.1:__A__/log?e=inner-click`);document.getElementById(`out`).textContent=`clicked inner`">Inner submit</button>
+<div id=out></div>
+<iframe src="http://127.0.0.1:__A__/nested.html" style="width:300px;height:80px"></iframe>
