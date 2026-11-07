@@ -351,7 +351,8 @@ export default function (pi: ExtensionAPI) {
 	// ── Optional: the eyes (vision model on the llama.cpp router) ───────────────────────────────────────────────
 
 	async function shotOf(tab: string | undefined, signal?: AbortSignal) {
-		const s = await tabs.screenshot({ tab }, signal);
+		// Full resolution for the eyes: the zoom pass crops this at native size (the default caps shots at 1568 px).
+		const s = await tabs.screenshot({ tab, maxWidth: 4096 }, signal);
 		return { shot: { buf: Buffer.from(s.data, "base64"), width: s.width, height: s.height }, tab: s.tab };
 	}
 

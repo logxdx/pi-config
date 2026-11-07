@@ -1,0 +1,11 @@
+{
+	"name": "pi-browser-tabs",
+	"private": true,
+	"type": "module",
+	"pi": {
+		"extensions": ["./index.ts"]
+	},
+	"optionalDependencies": {
+		"sharp": "^0.34.5"
+	}
+}

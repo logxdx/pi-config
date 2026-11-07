@@ -48,6 +48,7 @@ Check: `pi --version` prints a version.
 ```bash
 (cd ~/.pi/agent/extensions/bash-guard && npm install)
 (cd ~/.pi/agent/extensions/web-fetch && npm install)
+(cd ~/.pi/agent/extensions/browser-tabs && npm install --ignore-scripts)   # sharp: the vision zoom pass
 for d in ~/.pi/agent/packages/*/; do [ -f "$d/package.json" ] && (cd "$d" && npm install); done
 ```
 

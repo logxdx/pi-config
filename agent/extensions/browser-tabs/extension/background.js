@@ -15,6 +15,22 @@ if (typeof importScripts === "function") {
 	} catch {}
 }
 const PRESET = globalThis.PI_PRESET ?? {};
+let lastCapture = 0;
+/** captureVisibleTab, at most one call per 650 ms, retried when Chrome still reports its per-second quota. */
+async function captureThrottled(windowId) {
+	for (let i = 0; i < 4; i++) {
+		const wait = lastCapture + 650 - Date.now();
+		if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+		lastCapture = Date.now();
+		try {
+			return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+		} catch (e) {
+			if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/.test(String(e?.message ?? e))) throw e;
+		}
+	}
+	throw new Error("The browser refused screenshots for now (rate limit). Wait a second and try again.");
+}
+
 const cfg = async () => {
 	const c = await chrome.storage.local.get({ token: "", port: 0, allowAll: false });
 	return { token: c.token || PRESET.token || "", port: c.port || PRESET.port || 17420, allowAll: c.allowAll };
@@ -200,6 +216,7 @@ const ops = {
 
 	// captureVisibleTab only sees the active tab of a window, so a background tab is brought to the
 	// front for the shot and the previously active tab is restored. No DevTools protocol involved.
+	// Chrome allows about 2 captures a second (MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND): captureThrottled spaces them.
 	async screenshot({ tab, annotate, maxWidth }, session) {
 		await requireControl(tab, session);
 		const target = await chrome.tabs.get(tab);
@@ -212,7 +229,7 @@ const ops = {
 		}
 		try {
 			const shot = annotate ? await rectsTree(tab) : null;
-			const dataUrl = await chrome.tabs.captureVisibleTab(target.windowId, { format: "png" });
+			const dataUrl = await captureThrottled(target.windowId);
 			const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
 			const scale = Math.min(1, (maxWidth || 1568) / bitmap.width);
 			const w = Math.round(bitmap.width * scale);

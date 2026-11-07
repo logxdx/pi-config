@@ -72,7 +72,7 @@ Each pi session binds the first free port from 17420 up (10 ports), and the exte
 
 ### Vision tools (optional)
 
-`browser_point` and `browser_look` send a screenshot to a vision model on your llama.cpp router (LFM3-VL: boxes come back in a 0-1000 space, greedy decoding; a screenshot much larger than 1024 px gets a second zoom pass when `sharp` happens to resolve, otherwise it is sent as it is). If no model with `vl` in its id answers, the tools say so and everything else works.
+`browser_point` and `browser_look` send a screenshot to a vision model on your llama.cpp router (LFM3-VL: boxes come back in a 0-1000 space, greedy decoding; the vision tools take full-resolution screenshots, and one much larger than 1024 px gets a second zoom pass on a native-resolution crop; that needs `sharp`, installed with `npm install --ignore-scripts` in this folder, and without it the screenshot is sent as it is). If no model with `vl` in its id answers, the tools say so and everything else works.
 
 ### Trusted click (optional, off by default)
 
@@ -115,3 +115,12 @@ The bridge (`bridge.ts`) listens on loopback only. Requests need the shared toke
 - Console capture starts with the first `browser_console` call on a tab; there is no response-body or timing view. Use `agent-browser` for deeper debugging.
 - Up to 10 pi sessions at a time; an 11th gets a clear "all ports in use" error. A subagent is its own session, so it cannot reuse tabs its parent opened unless you share them.
 - If the extension's service worker is asleep, the first call can take a few seconds while it wakes.
+
+### Real-input and zoom test (2026-11-07)
+
+A visible Chrome for Testing window (throwaway profile, extension copy on a test port), fullscreen on niri workspace 2:
+the trusted click (`PI_BROWSER_TRUSTED=1`, placed by the eyes, ydotool with the saved calibration) reached a button
+that only counts `isTrusted` clicks; `browser_point` hit 4/4 small targets (28 px) on `test/fixtures/zoom.html` in a
+1920x1080 viewport, each with the zoom pass, 2.2-3.1 s per call (vision model LFM3-VL-2B). Found and fixed on the way:
+Chrome's 2-captures-per-second limit (screenshots are now spaced 650 ms apart), and the eyes now get full-resolution
+screenshots instead of the 1568 px cap meant for images sent to the planner.

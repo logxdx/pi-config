@@ -235,9 +235,9 @@ export class Tabs {
 		return formatConsole(r, level);
 	}
 
-	async screenshot(p: { tab?: string; annotate?: boolean }, signal?: AbortSignal) {
+	async screenshot(p: { tab?: string; annotate?: boolean; maxWidth?: number }, signal?: AbortSignal) {
 		const tab = this.tabOf(p.tab);
-		const shot = (await this.bridge.call("screenshot", { tab, annotate: p.annotate }, 60000, signal)) as {
+		const shot = (await this.bridge.call("screenshot", { tab, annotate: p.annotate, maxWidth: p.maxWidth }, 60000, signal)) as {
 			data: string;
 			mimeType: string;
 			width: number;
