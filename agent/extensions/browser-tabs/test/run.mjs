@@ -140,6 +140,11 @@ try {
 	check("find: no match says so", /No line matches/.test(r.text ?? ""), r.error ?? r.text);
 	r = await call("browser_read", { ...T, find: "save(" });
 	check("find: bad regex is a clear error", /not a valid regex/.test(r.error ?? ""), r.error);
+	t0 = Date.now();
+	r = await call("browser_read", { ...T, find: "(.*)*zzz" });
+	check("find: a catastrophic pattern is stopped, not left to hang pi", /took over 2s/.test(r.error ?? "") && Date.now() - t0 < 6000, `${Date.now() - t0} ms: ${r.error ?? r.text}`);
+	r = await call("browser_read", { ...T, find: "button" });
+	check("find: works again after a stopped pattern", /match \/button\/i/.test(r.text ?? ""), r.error ?? r.text);
 	r = await call("browser_read", { ...T, diff: true });
 	check("find leaves the diff baseline alone", /No changes/.test(r.text ?? ""), r.error ?? r.text);
 	r = await call("browser_tab", { ...T, action: "close" });

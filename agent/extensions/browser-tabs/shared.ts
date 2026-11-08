@@ -151,15 +151,16 @@ export function findRegex(pattern: string): RegExp {
 }
 
 /**
- * The lines of a read body that match `re`, like a locate: `[e24 button "Add to cart" (for "...")]`. A match inside an
+ * The lines of a read that match, like a locate: `[e24 button "Add to cart" (for "...")]`. `hits[i]` is where the
+ * pattern matched in `lines[i]`, or -1 (the matching itself runs elsewhere, under a time limit). A match inside an
  * iframe is preceded by its `<frame fN origin>` line, so it is clear where the ref lives. Long lines are cut around the match.
  */
-export function grepRead(body: string, re: RegExp, limit = 60): { text: string; count: number } {
+export function grepRead(lines: string[], hits: ArrayLike<number>, limit = 60): { text: string; count: number } {
 	const frames: string[] = [];
 	const out: string[] = [];
 	let shownFrame: string | undefined;
 	let count = 0;
-	for (const line of body.split("\n")) {
+	for (const [i, line] of lines.entries()) {
 		const t = line.trim();
 		if (t.startsWith("<frame ") && !t.endsWith("</frame>")) {
 			frames.push(t);
@@ -169,8 +170,8 @@ export function grepRead(body: string, re: RegExp, limit = 60): { text: string; 
 			frames.pop();
 			continue;
 		}
-		const m = re.exec(line);
-		if (!m) continue;
+		const at = hits[i];
+		if (at < 0) continue;
 		if (++count > limit) continue;
 		const frame = frames.at(-1);
 		if (frame !== shownFrame) {
@@ -179,7 +180,7 @@ export function grepRead(body: string, re: RegExp, limit = 60): { text: string; 
 		}
 		let l = line;
 		if (l.length > 300) {
-			const from = Math.max(0, Math.min(m.index - 120, l.length - 300));
+			const from = Math.max(0, Math.min(at - 120, l.length - 300));
 			l = `${from > 0 ? "…" : ""}${l.slice(from, from + 300)}${from + 300 < l.length ? "…" : ""}`;
 		}
 		out.push(l);

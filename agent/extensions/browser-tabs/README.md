@@ -42,7 +42,7 @@ With no UI to ask (print mode, subagents) an "ask" becomes a block with a clear 
 
 ## Find
 
-`browser_read` with `find` (a case-insensitive regex) is a locate: it reads the whole page (up to 500,000 characters instead of the 30,000 of a plain read) and returns only the lines that match, so `find: "button.*(save|submit)"` gives `[e12 button "Save settings"]` and nothing else. A match inside an iframe is shown under its `<frame fN origin>` line. Up to 60 lines are shown; past that the reply says how many more matched. A find does not move the `diff` baseline and writes no snapshot file.
+`browser_read` with `find` (a case-insensitive regex) is a locate: it reads the whole page (up to 500,000 characters instead of the 30,000 of a plain read) and returns only the lines that match, so `find: "button.*(save|submit)"` gives `[e12 button "Save settings"]` and nothing else. A match inside an iframe is shown under its `<frame fN origin>` line. Up to 60 lines are shown; past that the reply says how many more matched. Matching runs in a worker thread with a 2 s limit, so a pattern that backtracks badly (`(.*)*x`) is stopped with an error instead of freezing pi; a page cut at the character limit says so. A find does not move the `diff` baseline and writes no snapshot file.
 
 ## Changes and snapshot files
 
