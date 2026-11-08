@@ -7,7 +7,7 @@ import { Type } from "typebox";
 import { Tabs, tabId } from "./backend.ts";
 import { TOKEN_FILE } from "./bridge.ts";
 import * as eyes from "./eyes.ts";
-import { OutcomeUnknown, RISKY_WORDS, assessFacts, formatDiff, labelDuplicates, lineDiff, splitRead } from "./shared.ts";
+import { OutcomeUnknown, RISKY_WORDS, assessFacts, findRegex, formatDiff, grepRead, labelDuplicates, lineDiff, splitRead } from "./shared.ts";
 import type { ActParams, Assessment, ConsoleParams, ReadParams } from "./shared.ts";
 import { trustedUnavailable } from "./trusted.ts";
 
@@ -70,7 +70,15 @@ export default function (pi: ExtensionAPI) {
 		const body = labelDuplicates(rawBody.split("\n")).join("\n");
 		const full = rawBody ? `${header}\n\n${body}` : raw;
 		const url = header.split("\n")[1] ?? "";
-		const key = `${tab}|${p.selector ?? ""}|${p.interactive_only ? 1 : 0}`;
+		// A find is a lookup, not a read: it leaves the diff baseline and the snapshot files alone.
+		if (p.find) {
+			lastUrl.set(tab, url);
+			const re = findRegex(p.find);
+			const { text, count } = grepRead(body, re);
+			const what = `/${re.source}/i${p.selector ? ` in ${p.selector}` : ""}`;
+			return { text: count ? `${header}\n\n${count} line${count === 1 ? "" : "s"} match ${what}:\n${text}` : `${header}\n\nNo line matches ${what}. Try a looser pattern, or read without find.`, tab };
+		}
+		const key =`${tab}|${p.selector ?? ""}|${p.interactive_only ? 1 : 0}`;
 		const prev = seen.get(key);
 		const lines = body.split("\n");
 		seen.set(key, { url, lines });
@@ -170,6 +178,7 @@ export default function (pi: ExtensionAPI) {
 			"Read the tab before acting on it, and read again after anything that changes the page.",
 			"After the first read of a tab, pass diff: true to see only what changed.",
 			"Use selector or interactive_only to keep big pages small.",
+			'To get the ref of something you know is there, pass find (a regex) instead of reading the whole page, e.g. find: "button.*(save|submit)".',
 		],
 		parameters: Type.Object({
 			tab: TabParam,
@@ -182,10 +191,16 @@ export default function (pi: ExtensionAPI) {
 						"Return only the lines that changed since this tab was last read with the same selector and interactive_only (much shorter). Refs stay valid across reads.",
 				}),
 			),
+			find: Type.Optional(
+				Type.String({
+					description:
+						'Regex, case-insensitive: return only the matching lines, with their refs, from the whole page (no max_chars cap). Lines look like [e5 button "Save"], so "button.*save", "Add to cart" or "textbox.*email" work. Ignores diff.',
+				}),
+			),
 		}),
 		async execute(_id, p: ReadParams, signal) {
 			const { text, tab } = await readTab(p, !!p.diff, signal);
-			return ok(fence(text), { tab: `t${tab}`, chars: text.length, diff: !!p.diff, disposition: "read" });
+			return ok(fence(text), { tab: `t${tab}`, chars: text.length, diff: !!p.diff, ...(p.find ? { find: p.find } : {}), disposition: "read" });
 		},
 	});
 

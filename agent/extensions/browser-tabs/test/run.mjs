@@ -134,6 +134,14 @@ try {
 	check("act result fences title and url", /<untrusted/.test(r.text ?? ""), r.text);
 	r = await call("browser_read", { ...T, diff: true });
 	check("read diff", /No changes|Changes since|Most of the page changed/.test(r.text ?? ""), r.error ?? r.text);
+	r = await call("browser_read", { ...T, find: "button.*save|select" });
+	check("find: only matching lines, with refs", /2 lines match/.test(r.text ?? "") && /\[e\d+ button "Save settings"\]/.test(r.text ?? "") && /select "Colour"/.test(r.text ?? "") && !/Form page/.test(r.text ?? ""), r.error ?? r.text);
+	r = await call("browser_read", { ...T, find: "no such thing" });
+	check("find: no match says so", /No line matches/.test(r.text ?? ""), r.error ?? r.text);
+	r = await call("browser_read", { ...T, find: "save(" });
+	check("find: bad regex is a clear error", /not a valid regex/.test(r.error ?? ""), r.error);
+	r = await call("browser_read", { ...T, diff: true });
+	check("find leaves the diff baseline alone", /No changes/.test(r.text ?? ""), r.error ?? r.text);
 	r = await call("browser_tab", { ...T, action: "close" });
 	check("close tab", !r.error && /closed tab/.test(r.text), r.error ?? r.text);
 
@@ -145,6 +153,8 @@ try {
 	check("frames: cross-origin frame merged and marked with its origin", /<frame f1 http:\/\/localhost:\d+/.test(fr) && /Inner frame heading/.test(fr), r.error);
 	check("frames: nested frame (third origin) read", /Nested deep text/.test(fr));
 	check("frames: srcdoc frame read, hidden frame skipped", /Srcdoc frame/.test(fr) && !/should not be read/.test(fr));
+	r = await call("browser_read", { ...T, find: "inner submit|top button" });
+	check("find: a match in a frame is shown under its frame line", /match [^\n]*:\n\[e\d+ button "Top button"\]/.test(r.text ?? "") && /<frame f\d+ [^\n]*>\n\s*\[f\d+:e\d+ button "Inner submit"\]/.test(r.text ?? ""), r.error ?? r.text);
 	const top = ref(fr, 'button "Top button"');
 	const innerBtn = ref(fr, 'button "Inner submit"');
 	check("frames: top refs stay bare, frame refs are fN:eM", /^e\d+$/.test(top ?? "") && /^f\d+:e\d+$/.test(innerBtn ?? ""), `${top} ${innerBtn}`);

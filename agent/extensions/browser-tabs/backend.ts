@@ -44,6 +44,8 @@ export function tabId(value: string | number | undefined): number {
 }
 
 const isTimeout = (e: unknown) => /did not answer/.test(String((e as Error)?.message));
+/** How much of a page a browser_read `find` searches (a plain read stops at 30000 characters). */
+const FIND_MAX_CHARS = 500_000;
 
 export class Tabs {
 	readonly bridge = new Bridge();
@@ -100,7 +102,8 @@ export class Tabs {
 		const tab = this.tabOf(p.tab);
 		const full = (await this.bridge.call(
 			"read",
-			{ tab, selector: p.selector, interactiveOnly: p.interactive_only, maxChars: p.max_chars },
+			// A find searches the whole page, so it is not cut at the default 30000 characters a plain read is.
+			{ tab, selector: p.selector, interactiveOnly: p.interactive_only, maxChars: p.max_chars ?? (p.find ? FIND_MAX_CHARS : undefined) },
 			30000,
 			signal,
 		)) as string;

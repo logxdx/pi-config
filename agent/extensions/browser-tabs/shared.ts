@@ -28,6 +28,8 @@ export interface ReadParams {
 	interactive_only?: boolean;
 	max_chars?: number;
 	diff?: boolean;
+	/** Regex (case-insensitive): return only the matching lines of the read. */
+	find?: string;
 }
 
 export interface ActParams {
@@ -137,6 +139,53 @@ export function lineDiff(a: string[], b: string[]): { removed: string[]; added: 
 
 export function formatDiff(d: { removed: string[]; added: string[] }): string {
 	return [...d.removed.map((l) => `- ${l}`), ...d.added.map((l) => `+ ${l}`)].join("\n");
+}
+
+/** Compiles a browser_read `find` pattern, case-insensitive; a bad pattern gets an error the model can act on. */
+export function findRegex(pattern: string): RegExp {
+	try {
+		return new RegExp(pattern, "i");
+	} catch (e) {
+		throw new Error(`find: "${pattern}" is not a valid regex (${(e as Error).message}). Escape special characters like ( [ + ? or search for plain words.`);
+	}
+}
+
+/**
+ * The lines of a read body that match `re`, like a locate: `[e24 button "Add to cart" (for "...")]`. A match inside an
+ * iframe is preceded by its `<frame fN origin>` line, so it is clear where the ref lives. Long lines are cut around the match.
+ */
+export function grepRead(body: string, re: RegExp, limit = 60): { text: string; count: number } {
+	const frames: string[] = [];
+	const out: string[] = [];
+	let shownFrame: string | undefined;
+	let count = 0;
+	for (const line of body.split("\n")) {
+		const t = line.trim();
+		if (t.startsWith("<frame ") && !t.endsWith("</frame>")) {
+			frames.push(t);
+			continue;
+		}
+		if (t === "</frame>") {
+			frames.pop();
+			continue;
+		}
+		const m = re.exec(line);
+		if (!m) continue;
+		if (++count > limit) continue;
+		const frame = frames.at(-1);
+		if (frame !== shownFrame) {
+			out.push(frame ?? "(top page)");
+			shownFrame = frame;
+		}
+		let l = line;
+		if (l.length > 300) {
+			const from = Math.max(0, Math.min(m.index - 120, l.length - 300));
+			l = `${from > 0 ? "…" : ""}${l.slice(from, from + 300)}${from + 300 < l.length ? "…" : ""}`;
+		}
+		out.push(l);
+	}
+	if (count > limit) out.push(`… ${count - limit} more matching lines: narrow the pattern or pass a selector.`);
+	return { text: out.join("\n"), count };
 }
 
 /**

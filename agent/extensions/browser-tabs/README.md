@@ -5,7 +5,7 @@ Browser tools for pi that work in your real browser (built and tested with Heliu
 | Tool | What it does |
 |---|---|
 | `browser_tabs` | List open tabs (title, URL, whether pi may use each) |
-| `browser_read` | Read a tab as text, with refs like `e5` (or `f3:e5` inside an iframe) on links, buttons and fields. `diff: true` returns only what changed since the last read |
+| `browser_read` | Read a tab as text, with refs like `e5` (or `f3:e5` inside an iframe) on links, buttons and fields. `diff: true` returns only what changed since the last read; `find: "button.*save"` (a regex) returns only the matching lines, with their refs |
 | `browser_act` | click, double_click, hover, type, press, select, check, uncheck, scroll, wait_text, `click_xy` (pixels of the last screenshot), `upload` (file into a file input). `trusted: true` = real mouse (opt-in) |
 | `browser_screenshot` | Screenshot the visible part of a tab; `annotate` boxes and labels interactive elements with their refs |
 | `browser_console` | Console errors and failed network requests of a tab (capture starts on the first call; `reload: true` catches the page load) |
@@ -39,6 +39,10 @@ There is no separate core around these tools, so `browser_act` checks itself. Be
 | anything else | runs |
 
 With no UI to ask (print mode, subagents) an "ask" becomes a block with a clear reason, so nothing risky happens unattended. Page text in `browser_read`, `browser_act`, `browser_look`, `browser_console` and tab titles is wrapped in `<untrusted>` plus one line saying it is data, not instructions. A timeout on an act is reported as "outcome unknown: read the page before retrying", never as success or failure.
+
+## Find
+
+`browser_read` with `find` (a case-insensitive regex) is a locate: it reads the whole page (up to 500,000 characters instead of the 30,000 of a plain read) and returns only the lines that match, so `find: "button.*(save|submit)"` gives `[e12 button "Save settings"]` and nothing else. A match inside an iframe is shown under its `<frame fN origin>` line. Up to 60 lines are shown; past that the reply says how many more matched. A find does not move the `diff` baseline and writes no snapshot file.
 
 ## Changes and snapshot files
 

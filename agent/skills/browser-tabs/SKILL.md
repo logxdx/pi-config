@@ -22,7 +22,7 @@ Tools: `browser_tabs`, `browser_read`, `browser_act`, `browser_screenshot`, `bro
 ## Core loop
 
 1. `browser_tab` `open` a URL, or pick a tab id (`t123`) from `browser_tabs`.
-2. `browser_read` (`interactive_only` or `selector` on big pages). Elements look like `[e5 button "Save"]`; inside an iframe the ref is `f3:e5`. Same-label buttons show their context: `[e24 button "Add to cart" (for "Wireless mouse")]`. Use that to pick the right one.
+2. `browser_read` (`interactive_only` or `selector` on big pages; `find: "button.*checkout"` (a regex) when you know what you are looking for: only matching lines come back). Elements look like `[e5 button "Save"]`; inside an iframe the ref is `f3:e5`. Same-label buttons show their context: `[e24 button "Add to cart" (for "Wireless mouse")]`. Use that to pick the right one.
 3. `browser_act` with the ref: `click`, `type`, `press`, `check`, `scroll`, `wait_text`, `select`.
 4. `browser_read` again with `diff: true` (or `show_changes: true` on the act). If a result says "the page changed", refs may be stale: read again and use the new ones.
 
