@@ -1,93 +1,70 @@
 /**
- * Custom Header Extension
- *
- * Replaces the built-in startup header with an identical copy you can customize.
- * Edit the `buildHeader()` function below to change what's shown at startup.
- *
- * Usage: Just edit this file and run /reload in pi.
- * To restore the built-in header: rename/delete this file and /reload.
+ * pi-operator header: the π from ~/.pi/agent/extensions/custom-header.ts with "-OPERATOR" next to it.
+ * Loaded by bin/operator from ~/.pi-operator/agent/extensions.txt; the regular pi header is unchanged.
+ * Edit and /reload.
  */
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
-import { VERSION, keyHint, rawKeyHint } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import { VERSION } from "@mariozechner/pi-coding-agent";
 
-/**
- * Build the header text. This is what you customize.
- *
- * Currently replicates the built-in header exactly:
- *   - App name + version
- *   - Keybinding hints
- *
- * To customize, just edit the `logo` or `hints` array below.
- */
-function buildHeader(theme: Theme): string {
-	// ── Logo ──────────────────────────────────────────────
-	// Change this to whatever you want as the title line.
+// The π (same art as the regular pi header): 10 rows, 33 columns.
+const PI = [
+	"   ███████████████████████████╗  ",
+	"   ╚══██████╔════════██████╔══╝  ",
+	"      ██████║        ██████║     ",
+	"      ██████║        ██████║     ",
+	"      ██████║        ██████║     ",
+	"      ██████║        ██████║     ",
+	"      ██████║        ██████║     ",
+	"      ██████║        ██████║     ",
+	"   ████████████╗  ████████████╗  ",
+	"   ╚═══════════╝  ╚═══════════╝  ",
+];
 
-	const ascii_art_2 = [
-		"   ███████████████████████████╗  ",
-		"   ╚══██████╔════════██████╔══╝  ",
-		"      ██████║        ██████║     ",
-		"      ██████║        ██████║     ",
-		"      ██████║        ██████║     ",
-		"      ██████║        ██████║     ",
-		"      ██████║        ██████║     ",
-		"      ██████║        ██████║     ",
-		"   ████████████╗  ████████████╗  ",
-		"   ╚═══════════╝  ╚═══════════╝  ",
-	].map(line => theme.bold(theme.fg("success", line))).join("\n");
+// "-OPERATOR" in the same block style (ANSI Shadow): 6 rows.
+const GLYPHS: Record<string, string[]> = {
+	"-": ["      ", "      ", "█████╗", "╚════╝", "      ", "      "],
+	O: [" ██████╗ ", "██╔═══██╗", "██║   ██║", "██║   ██║", "╚██████╔╝", " ╚═════╝ "],
+	P: ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔═══╝ ", "██║     ", "╚═╝     "],
+	E: ["███████╗", "██╔════╝", "█████╗  ", "██╔══╝  ", "███████╗", "╚══════╝"],
+	R: ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██║  ██║", "╚═╝  ╚═╝"],
+	A: [" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"],
+	T: ["████████╗", "╚══██╔══╝", "   ██║   ", "   ██║   ", "   ██║   ", "   ╚═╝   "],
+};
+const WORD = [...Array(6).keys()].map((row) => [..."-OPERATOR"].map((ch) => GLYPHS[ch][row]).join(""));
 
-	const logo =
-		"\n" + ascii_art_2 + "\n\n" +
-		theme.bold(theme.fg("accent", "pi")) +
-		theme.fg("dim", ` v${VERSION}`);
+const width = (s: string) => [...s].length;
 
-	// ── Keybinding hints ─────────────────────────────────
-	// Each entry is one line. Remove, reorder, or add your own.
-	// Use rawKeyHint("key", "description") for app-level shortcuts.
-	// Use keyHint("editorAction", "description") for editor shortcuts.
-	const hints = [
-		rawKeyHint("escape", "to interrupt"),
-		rawKeyHint("ctrl+c", "to clear"),
-		rawKeyHint("ctrl+c twice", "to exit"),
-		rawKeyHint("ctrl+d", "to exit (empty)"),
-		rawKeyHint("ctrl+z", "to suspend"),
-		keyHint("deleteToLineEnd", "to delete to end"),
-		rawKeyHint("shift+tab", "to cycle thinking level"),
-		rawKeyHint("ctrl+p/shift+ctrl+p", "to cycle models"),
-		rawKeyHint("ctrl+l", "to select model"),
-		rawKeyHint("ctrl+o", "to expand tools"),
-		rawKeyHint("ctrl+t", "to expand thinking"),
-		rawKeyHint("ctrl+g", "for external editor"),
-		rawKeyHint("/", "for commands"),
-		rawKeyHint("!", "to run bash"),
-		rawKeyHint("!!", "to run bash (no context)"),
-		rawKeyHint("alt+enter", "to queue follow-up"),
-		rawKeyHint("alt+up", "to edit all queued messages"),
-		rawKeyHint(process.platform === "win32" ? "alt+v" : "ctrl+v", "to paste image"),
-		rawKeyHint("drop files", "to attach"),
-	];
-
-	//return `${logo}\n${hints.join("\n")}`;
-	return logo
+function buildHeader(theme: Theme, cols: number): string[] {
+	const pi = (s: string) => theme.bold(theme.fg("success", s));
+	const word = (s: string) => theme.bold(theme.fg("accent", s));
+	const title = theme.bold(theme.fg("accent", "π-operator")) + theme.fg("dim", ` v${VERSION}`);
+	const piW = width(PI[0]);
+	const wordW = width(WORD[0]);
+	let art: string[];
+	if (cols >= piW + wordW) {
+		// Side by side, the word level with the π's legs.
+		const top = PI.length - WORD.length - 1;
+		art = PI.map((line, i) => pi(line) + (i >= top && i < top + WORD.length ? word(WORD[i - top]) : ""));
+	} else if (cols >= wordW) {
+		art = [...PI.map(pi), ...WORD.map(word)];
+	} else {
+		art = PI.map(pi);
+	}
+	return ["", ...art, "", title];
 }
-
-
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
-
 		ctx.ui.setHeader((_tui, theme) => ({
-			render(_width: number): string[] {
-				return buildHeader(theme).split("\n");
+			render(cols: number): string[] {
+				return buildHeader(theme, cols);
 			},
 			invalidate() {},
 		}));
 	});
 
-	// Command to restore the built-in header
 	pi.registerCommand("builtin-header", {
 		description: "Restore the built-in startup header",
 		handler: async (_args, ctx) => {

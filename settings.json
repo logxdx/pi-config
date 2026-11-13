@@ -1,0 +1,19 @@
+{
+  "voice": {
+    "on": true,
+    "voice": "ref_02",
+    "speed": 1.2,
+    "pitch": 0,
+    "wakeWord": true,
+    "followUp": true
+  },
+  "operator": {
+    "input": true,
+    "approvals": "ask",
+    "maxSteps": 40,
+    "routerJudge": true,
+    "finishGate": false,
+    "browser": "helium",
+    "closeBrowser": "task"
+  }
+}

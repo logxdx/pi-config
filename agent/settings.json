@@ -1,58 +1,11 @@
 {
-  "lastChangelogVersion": "1.5.2",
-  "terminal": {
-    "showImages": false,
-    "imageWidthCells": 60,
-    "showTerminalProgress": true
-  },
+  "defaultProvider": "operator",
+  "defaultModel": "op-planner",
+  "enableInstallTelemetry": false,
   "images": {
     "blockImages": false
   },
-  "transport": "auto",
-  "httpIdleTimeoutMs": 300000,
-  "cacheWarming": "streaming",
-  "markdown": {
-    "mermaid": "streaming"
-  },
-  "showCacheMissNotices": true,
-  "enableInstallTelemetry": false,
-  "tuiMode": "fullscreen",
   "theme": "dark",
-  "hideThinkingBlock": true,
-  "packages": [
-    "./packages/pi-interactive-subagents",
-    "./packages/pi-observational-memory"
-  ],
-  "compaction": {
-    "modelOverrides": {
-      "llama.cpp/ling3": {
-        "reserveTokens": 32768
-      },
-      "llama.cpp/lfm2.5-24b": {
-        "reserveTokens": 16384
-      },
-      "llama.cpp/spark-x2.6-1.7b": {
-        "reserveTokens": 32768
-      }
-    }
-  },
-  "observational-memory": {
-    "observerConcurrency": 1,
-    "compactAtContextTokens": 64000,
-    "compactAtContextRatio": 0.75,
-    "models": {
-      "observer": {
-        "provider": "current",
-        "id": "current",
-        "thinking": "low"
-      },
-      "consolidator": {
-        "provider": "current",
-        "id": "current",
-        "thinking": "medium"
-      }
-    }
-  },
-  "defaultProvider": "openrouter",
-  "defaultModel": "deepseek/deepseek-v4.1-flash-1017"
+  "lastChangelogVersion": "1.5.2",
+  "hideThinkingBlock": true
 }

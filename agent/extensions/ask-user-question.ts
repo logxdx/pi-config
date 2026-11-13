@@ -205,14 +205,27 @@ async function askSingleChoice(
 	question: string,
 	context: string | undefined,
 	options: AskOption[],
+	external?: Promise<AskAnswer | null | undefined>,
+	otherLabelOverride?: string,
 ): Promise<AskAnswer | null> {
-	const otherLabel = getOtherLabel(options);
+	const otherLabel = otherLabelOverride ?? getOtherLabel(options);
 	const allOptions: DisplayOption[] = [
 		...options.map((option, index) => ({ ...option, id: `option:${index}`, index: index + 1 })),
 		{ id: "other", label: otherLabel, value: "__other__", isOther: true },
 	];
 
 	return ctx.ui.custom<AskAnswer | null>((tui: any, theme: any, _kb: any, done: (result: AskAnswer | null) => void) => {
+		// pi-operator voice: an answer said out loud closes the dialog (first answer wins).
+		let closed = false;
+		const finish = done;
+		done = (result) => {
+			if (closed) return;
+			closed = true;
+			finish(result);
+		};
+		external?.then((v) => {
+			if (v) done(v);
+		});
 		let optionIndex = 0;
 		let editMode = false;
 		let cachedLines: string[] | undefined;
@@ -338,6 +351,7 @@ async function askMultiChoice(
 	question: string,
 	context: string | undefined,
 	options: AskOption[],
+	external?: Promise<AskAnswer[] | null | undefined>,
 ): Promise<AskAnswer[] | null> {
 	const otherLabel = getOtherLabel(options);
 	const choiceItems: DisplayOption[] = options.map((option, index) => ({
@@ -353,6 +367,17 @@ async function askMultiChoice(
 	];
 
 	return ctx.ui.custom<AskAnswer[] | null>((tui: any, theme: any, _kb: any, done: (result: AskAnswer[] | null) => void) => {
+		// pi-operator voice: an answer said out loud closes the dialog (first answer wins).
+		let closed = false;
+		const finish = done;
+		done = (result) => {
+			if (closed) return;
+			closed = true;
+			finish(result);
+		};
+		external?.then((v) => {
+			if (v) done(v);
+		});
 		let optionIndex = 0;
 		let editMode = false;
 		let cachedLines: string[] | undefined;
@@ -538,6 +563,20 @@ async function askMultiChoice(
 	});
 }
 
+/** A reply understood by pi-operator's voice mode, as this tool's answers; null when nothing usable was said. */
+function voiceAnswers(reply: any, options: AskOption[], mode: AskUserQuestionMode): AskAnswer[] | null {
+	if (!reply) return null;
+	if (reply.kind === "text") {
+		const text = String(reply.text ?? "").trim();
+		if (!text) return null;
+		return [mode === "text" ? { type: "text", label: text, value: text } : { type: "other", label: text, value: text }];
+	}
+	const answers: AskAnswer[] = (reply.indexes as number[])
+		.filter((i) => i >= 0 && i < options.length)
+		.map((i) => ({ type: "option", label: options[i].label, value: options[i].value, index: i + 1 }));
+	return mode === "single-select" && !answers.length ? null : answers;
+}
+
 // Shared UI mutex. ctx.ui.custom()/editor can only handle one active call at
 // a time, so ALL pop-up-style tools (ask_user_question, quiz, ...) must
 // serialize against each other, not just against themselves. We stash one
@@ -593,11 +632,41 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 				return cancelledResult(params.question, mode, context);
 			}
 
+			// pi-operator voice mode: the question is also asked out loud (both at once in the TUI; voice only headless).
+			const asker = (globalThis as any)[Symbol.for("pi-operator.registry")]?.asker;
+			const voice = asker?.({ question: params.question, details: context, options, multiSelect: mode === "multi-select" }, signal) as
+				| { result: Promise<any>; cancel(): void }
+				| undefined;
+			const spoken: Promise<AskAnswer[] | null> | undefined = voice?.result.then((reply: any) => voiceAnswers(reply, options, mode));
+
+			if (ctx.mode !== "tui") {
+				// No terminal to draw a dialog in (RPC: the voice daemon). Voice, or nothing; never wait on a dialog.
+				if (!spoken) return unavailableResult(params.question, mode, "ask_user_question requires interactive mode UI", context);
+				const answers = await spoken;
+				if (!answers) return unavailableResult(params.question, mode, "The user did not answer (asked by voice).", context);
+				return buildResult(params.question, context, mode, answers);
+			}
+
 			if (!ctx.hasUI) {
+				voice?.cancel();
 				return unavailableResult(params.question, mode, "ask_user_question requires interactive mode UI", context);
 			}
 
 			return withUILock(async () => {
+				try {
+					return await askInTui();
+				} finally {
+					voice?.cancel(); // answered in the dialog first (or voice already done): stop speaking and listening
+				}
+			});
+
+			async function askInTui() {
+				if (mode === "text" && spoken) {
+					// Text with voice: the closable dialog (ui.editor cannot be closed when the answer is spoken).
+					const answer = await askSingleChoice(ctx, params.question, context, [], spoken.then((a) => a?.[0] ?? null), "Type your answer");
+					if (!answer) return cancelledResult(params.question, mode, context);
+					return buildResult(params.question, context, mode, [{ type: "text", label: answer.label, value: answer.value }]);
+				}
 				if (mode === "text") {
 					const editorTitle = context ? `${params.question}\n\n${context}` : params.question;
 					const answer = await ctx.ui.editor(editorTitle);
@@ -610,19 +679,19 @@ export default function askUserQuestion(pi: ExtensionAPI) {
 				}
 
 				if (mode === "single-select") {
-					const answer = await askSingleChoice(ctx, params.question, context, options);
+					const answer = await askSingleChoice(ctx, params.question, context, options, spoken?.then((a) => a?.[0] ?? null));
 					if (!answer) {
 						return cancelledResult(params.question, mode, context);
 					}
 					return buildResult(params.question, context, mode, [answer]);
 				}
 
-				const answers = await askMultiChoice(ctx, params.question, context, options);
+				const answers = await askMultiChoice(ctx, params.question, context, options, spoken);
 				if (!answers) {
 					return cancelledResult(params.question, mode, context);
 				}
 				return buildResult(params.question, context, mode, answers);
-			});
+			}
 		},
 
 		renderCall(args, theme) {

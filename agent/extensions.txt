@@ -1,0 +1,11 @@
+# Extra pi extensions for bin/operator (it runs pi with -ne, so these are passed with -e). One path per line.
+# All are copies inside ~/.pi-operator; nothing here loads from ~/.pi.
+~/.pi-operator/agent/extensions/custom-header.ts
+~/.pi-operator/agent/packages/pi-interactive-subagents
+~/.pi-operator/agent/extensions/subagents-resume/index.ts
+~/.pi-operator/agent/extensions/trace/index.ts
+~/.pi-operator/agent/extensions/prompt-snippets/index.ts
+~/.pi-operator/agent/extensions/ask-user-question.ts
+~/.pi-operator/agent/extensions/rewind/index.ts
+~/.pi-operator/agent/extensions/web-search/index.ts
+~/.pi-operator/agent/extensions/web-fetch/index.ts

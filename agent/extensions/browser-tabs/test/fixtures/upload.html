@@ -1,6 +1,0 @@
-<!doctype html><title>Upload</title><h1>Upload</h1>
-<label>Attachment <input type=file id=f></label><div id=o></div>
-<script>
-document.getElementById("f").addEventListener("change", async (e) => { const f = e.target.files[0];
- const t = await f.text(); fetch(`/log?e=${encodeURIComponent("file="+f.name+":"+f.size+":"+f.type+":"+t.trim())}`); });
-</script>

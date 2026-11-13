@@ -1,19 +1,32 @@
+# pi-operator setup (branch "operator" of pi-config, checked out at ~/.pi-operator). Tracked: the agent setup
+# (SYSTEM.md, extensions.txt, extensions, skills, packages, settings, models) and settings.json (/operator-settings,
+# /voice-settings). Everything below stays local.
+
 # Credentials & machine-local state
 agent/auth.json
 agent/models-store.json
 agent/trust.json
+agent/crashes.json
 agent/*.bak*
 
 # Sessions & runtime data
 agent/sessions/
 agent/rewind/
+voice-sessions/
+run/
+voice-daemon.*
 **/artifacts/
 
-# Pi itself: launcher and release bundles written by the pi.dev installer
+# The operator browser: its profile (your logins and cookies) and the generated extension copy (has the bridge token)
+browser-profile/
+browser-extension/
+
+# Machine-specific
+input-calibration.json
+
+# Pi itself and package installs
 agent/bin/
 agent/install/
-
-# Package installs managed by pi, rebuilt from settings.json "packages"
 agent/git/
 agent/npm/
 
