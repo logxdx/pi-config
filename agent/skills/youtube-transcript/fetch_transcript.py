@@ -12,22 +12,40 @@ import shutil
 import subprocess
 import tempfile
 import json
+import time
+
+# Extra flags: solve YouTube JS challenges and impersonate a browser if curl_cffi is installed.
+COMMON_FLAGS = ["--no-warnings", "--remote-components", "ejs:github"]
+RETRIES = 4
+
+
+def run_ytdlp(cmd):
+    """Run yt-dlp, retrying with backoff on HTTP 429 (rate limiting)."""
+    delay = 15
+    for attempt in range(1, RETRIES + 1):
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return result
+        if "429" in result.stderr and attempt < RETRIES:
+            print(f"Rate limited (429), retrying in {delay}s ({attempt}/{RETRIES - 1})...", file=sys.stderr)
+            time.sleep(delay)
+            delay *= 2
+            continue
+        print(f"Error executing yt-dlp: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_metadata(url):
     cmd = [
         "yt-dlp",
         "--dump-json",
-        "--no-warnings",
         "--skip-download",
+        *COMMON_FLAGS,
         url,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = run_ytdlp(cmd)
         return json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing yt-dlp: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -48,7 +66,11 @@ def pick_english_lang(info):
     for lang in subs:
         if lang.startswith("en"):
             return lang, False
-    # 3. Auto, preferred order
+    # 3. Auto: the original-language track first (e.g. "en-orig"); it is the
+    #    real ASR output and is less rate-limited than the translated "en" track.
+    for lang in auto:
+        if lang.startswith("en") and lang.endswith("-orig"):
+            return lang, True
     for lang in preferred:
         if lang in auto:
             return lang, True
@@ -64,18 +86,14 @@ def download_subtitle(url, lang, is_auto, outdir):
     cmd = [
         "yt-dlp",
         "--skip-download",
-        "--no-warnings",
+        *COMMON_FLAGS,
         "--sub-format", "json3",
         "--sub-langs", lang,
         "--write-auto-subs" if is_auto else "--write-subs",
         "-o", os.path.join(outdir, "%(id)s.%(ext)s"),
         url,
     ]
-    try:
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error downloading subtitles via yt-dlp: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
+    run_ytdlp(cmd)
 
     matches = glob.glob(os.path.join(outdir, "*.json3"))
     if not matches:
@@ -84,9 +102,28 @@ def download_subtitle(url, lang, is_auto, outdir):
     return matches[0]
 
 
-def extract_text_from_json3(path):
+def extract_text_from_json3(path, timestamps=False):
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    if timestamps:
+        # Auto captions carry per-word offsets (tOffsetMs); use them so a marker
+        # appears whenever the second changes. Manual captions without offsets
+        # fall back to one marker per caption line.
+        lines = []
+        last = None
+        for event in data.get("events", []):
+            base = event.get("tStartMs", 0)
+            for seg in event.get("segs", []) or []:
+                word = seg.get("utf8", "").replace("\n", " ")
+                if not word.strip():
+                    continue
+                t = (base + seg.get("tOffsetMs", 0)) // 1000
+                if t != last:
+                    lines.append(f"\n[{t // 60}:{t % 60:02d}] ")
+                    last = t
+                lines.append(word.strip() + " ")
+        return "".join(lines).strip()
 
     text_parts = []
     for event in data.get("events", []):
@@ -98,11 +135,13 @@ def extract_text_from_json3(path):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python fetch_transcript.py <youtube_url>", file=sys.stderr)
+    args = [a for a in sys.argv[1:] if a != "--timestamps"]
+    timestamps = "--timestamps" in sys.argv[1:]
+    if not args:
+        print("Usage: python fetch_transcript.py <youtube_url> [--timestamps]", file=sys.stderr)
         sys.exit(1)
 
-    url = sys.argv[1]
+    url = args[0]
 
     print("Fetching video metadata...", file=sys.stderr)
     info = get_metadata(url)
@@ -121,7 +160,7 @@ def main():
             file=sys.stderr,
         )
         sub_path = download_subtitle(url, lang, is_auto, tmpdir)
-        transcript = extract_text_from_json3(sub_path)
+        transcript = extract_text_from_json3(sub_path, timestamps)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

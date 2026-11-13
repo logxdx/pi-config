@@ -1,0 +1,279 @@
+#!/usr/bin/python3
+"""Point at things on the real desktop and type/press keys (niri, Wayland). Ported from liquid-operator (lop).
+
+  lop-screen point TARGET [--click | --double | --right] [--type TEXT]
+  lop-screen type TEXT
+  lop-screen press KEY          # Return, Escape, Tab, ctrl+l, super+d ...
+  lop-screen stop               # remove the pointer overlay
+
+point: an LFM3-VL model on pi's llama.cpp router (PI_SCREEN_URL, default :11434) finds TARGET on the focused
+monitor and the pointer overlay shows it. The model is PI_SCREEN_MODEL, or else the router's first model with "vl"
+in its id (a loaded one first). Clicks go through ydotool, text and keys through wtype.
+"""
+import argparse, base64, io, json, os, re, shutil, signal, socket, subprocess, sys, time, urllib.error, urllib.request
+
+from PIL import Image
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+URL = os.environ.get("PI_SCREEN_URL", "http://127.0.0.1:11434")
+MODEL = os.environ.get("PI_SCREEN_MODEL")
+EYES_MAX_SIDE = int(os.environ.get("PI_SCREEN_MAX_SIDE", "1024"))  # LFM3-VL grounding: 29/29, 1 px median at 1024
+# own socket + pidfile, so a running lop agent keeps its overlay
+SOCK = os.environ.get("PI_SCREEN_OVERLAY_SOCK", "/tmp/pi-screen-overlay.sock")
+PIDFILE = SOCK + ".pid"
+YDOTOOL_SOCKET = os.environ.get("YDOTOOL_SOCKET", "/tmp/.ydotool_socket")
+
+
+class Fail(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------- model
+def post(url, body=None, timeout=120):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise Fail(f"{url}: HTTP {e.code} {e.read().decode(errors='replace')[:300]}") from None
+    except urllib.error.URLError as e:
+        raise Fail(f"{url}: {e.reason} (is pi's llama.cpp router running? ~/llama.cpp/serve-pi.sh)") from None
+
+
+def vision_model():
+    if MODEL:
+        return MODEL
+    models = post(URL + "/v1/models", timeout=10).get("data", [])
+    vl = [m for m in models if "vl" in m["id"].lower()]
+    if not vl:
+        raise Fail(f"no vision model on {URL} (no id containing 'vl'): set PI_SCREEN_MODEL")
+    loaded = [m for m in vl if (m.get("status") or {}).get("value") == "loaded"]
+    return (loaded or vl)[0]["id"]
+
+
+def png_data_url(img, max_side):
+    if max(img.size) > max_side:
+        img = img.copy()
+        img.thumbnail((max_side, max_side), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _locate_once(img, target, model):
+    body = {"model": model, "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": png_data_url(img, EYES_MAX_SIDE)}},
+                {"type": "text", "text": f"Where is the {target}? Give the bounding box [x1, y1, x2, y2]."}]}],
+            "max_tokens": 64, "cache_prompt": False, "temperature": 0.0, "top_k": 1,  # greedy: same box every run
+            "chat_template_kwargs": {"enable_thinking": False}}
+    txt = post(URL + "/v1/chat/completions", body)["choices"][0]["message"].get("content") or ""
+    nums = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", txt)]
+    if len(nums) < 4:
+        return None
+    w, h = img.size
+    x1, y1, x2, y2 = nums[:4]  # LFM3-VL answers in 0-1000 space
+    box = [x1 * w / 1000, y1 * h / 1000, x2 * w / 1000, y2 * h / 1000]
+    return box if box[2] > box[0] and box[3] > box[1] else None
+
+
+def locate(img, target, model):
+    """Box in image pixels or None. A 1440p screen is shrunk 2.5x for the eyes, so big captures get a second pass
+    on a native-resolution crop around the first hit (20-38 px off -> 1-2 px)."""
+    box = _locate_once(img, target, model)
+    if box is None:
+        return None
+    w, h = img.size
+    if max(w, h) > 1.5 * EYES_MAX_SIDE:
+        cw, ch = min(w, EYES_MAX_SIDE), min(h, int(EYES_MAX_SIDE * 0.625))
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        left, top = int(min(max(0, cx - cw / 2), w - cw)), int(min(max(0, cy - ch / 2), h - ch))
+        fine = _locate_once(img.crop((left, top, left + cw, top + ch)), target, model)
+        if fine is not None:
+            box = [fine[0] + left, fine[1] + top, fine[2] + left, fine[3] + top]
+    return [round(v) for v in box]
+
+
+
+# ---------------------------------------------------------------- niri + capture
+def _niri(*args):
+    r = subprocess.run(["niri", "msg", "-j", *args], capture_output=True, text=True, timeout=5)
+    if r.returncode:
+        raise Fail(r.stderr.strip() or "niri msg failed")
+    return json.loads(r.stdout)
+
+
+def focused_output():
+    o = _niri("focused-output")
+    lg = o["logical"]
+    return {"name": o["name"], "x": lg["x"], "y": lg["y"], "scale": lg["scale"]}
+
+
+def focused_window():
+    try:
+        w = _niri("focused-window")
+        return f'{w.get("app_id")}: {w.get("title")}' if w else "(no focused window)"
+    except Exception:
+        return "(unknown)"
+
+
+def capture():
+    """Focused output in physical px. The pointer is hidden first, or the eyes read its label and point at it."""
+    if _send({"type": "clear"}):
+        time.sleep(0.06)
+    out = focused_output()
+    r = subprocess.run(["grim", "-o", out["name"], "-"], capture_output=True, timeout=10)
+    if r.returncode:
+        raise Fail(r.stderr.decode(errors="replace").strip() or "grim failed")
+    img = Image.open(io.BytesIO(r.stdout))
+    img.load()
+    return img, out
+
+
+# ---------------------------------------------------------------- pointer overlay (outlives this process)
+def _send(msg):
+    if not os.path.exists(SOCK):
+        return False
+    try:
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(SOCK)
+        s.sendall((json.dumps(msg) + "\n").encode())
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def _overlay():
+    """-> (pid, (x, y)) of the running overlay, or None."""
+    try:
+        pid, x, y = map(int, open(PIDFILE).read().split())
+        os.kill(pid, 0)
+        return pid, (x, y)
+    except (OSError, ValueError):
+        return None
+
+
+def stop_overlay():
+    cur = _overlay()
+    if cur:
+        os.kill(cur[0], signal.SIGTERM)
+    for p in (PIDFILE, SOCK):
+        try:
+            os.unlink(p)
+        except FileNotFoundError:
+            pass
+
+
+def show_pointer(x, y, label, out, ttl=4.0):
+    """x, y: logical px local to `out`. Starts the overlay on that output, or moves it there."""
+    origin = (out["x"], out["y"])
+    cur = _overlay()
+    if not (cur and cur[1] == origin and os.path.exists(SOCK)):
+        stop_overlay()
+        env = dict(os.environ, LOP_OVERLAY_SOCK=SOCK)
+        p = subprocess.Popen(["/usr/bin/python3", os.path.join(HERE, "overlay.py"), *map(str, origin)], env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        with open(PIDFILE, "w") as f:
+            f.write(f"{p.pid} {origin[0]} {origin[1]}")
+        for _ in range(40):
+            time.sleep(0.1)
+            if os.path.exists(SOCK):
+                break
+    return _send({"type": "point", "x": x, "y": y, "label": label, "ttl": ttl})
+
+
+# ---------------------------------------------------------------- mouse + keyboard
+def _ydotool(*args):
+    if not shutil.which("ydotool"):
+        raise Fail("ydotool is not installed")
+    env = dict(os.environ, YDOTOOL_SOCKET=YDOTOOL_SOCKET)
+    r = subprocess.run(["ydotool", *map(str, args)], capture_output=True, text=True, timeout=10, env=env)
+    if r.returncode:
+        raise Fail((r.stderr or r.stdout).strip()[:200] or "ydotool failed (is ydotoold running?)")
+
+
+def click(gx, gy, button="left", double=False):
+    """Global logical coordinates. ydotool's --absolute slams to 0,0 and then moves relatively, so pointer
+    acceleration must be flat for this to land."""
+    _ydotool("mousemove", "--absolute", "-x", int(round(gx)), "-y", int(round(gy)))
+    time.sleep(0.05)
+    _ydotool("click", "--repeat", 2 if double else 1, {"left": "0xC0", "right": "0xC1", "middle": "0xC2"}[button])
+
+
+def type_text(text):
+    r = subprocess.run(["wtype", text], capture_output=True, text=True, timeout=30)
+    if r.returncode:
+        raise Fail(r.stderr.strip() or "wtype failed")
+
+
+MODS = {"ctrl": "ctrl", "control": "ctrl", "alt": "alt", "shift": "shift", "super": "logo", "meta": "logo"}
+
+
+def press(key):
+    parts = key.replace("-", "+").split("+")
+    mods, k = [MODS.get(m.lower(), m) for m in parts[:-1]], parts[-1]
+    args = [a for m in mods for a in ("-M", m)]
+    args += ["-k", {"enter": "Return", "esc": "Escape", "tab": "Tab", "space": "space"}.get(k.lower(), k)]
+    args += [a for m in reversed(mods) for a in ("-m", m)]
+    r = subprocess.run(["wtype", *args], capture_output=True, text=True, timeout=10)
+    if r.returncode:
+        raise Fail(r.stderr.strip() or "wtype failed")
+
+
+# ---------------------------------------------------------------- commands
+def focus():
+    time.sleep(0.3)
+    return f" Focused window now: {focused_window()}."
+
+
+def cmd_point(a):
+    model = vision_model()
+    img, out = capture()
+    box = locate(img, a.target, model)
+    if not box:
+        return f"Could not find '{a.target}' on the screen ({out['name']}). Name it more concretely."
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    lx, ly = cx / out["scale"], cy / out["scale"]
+    gx, gy = out["x"] + lx, out["y"] + ly
+    show_pointer(lx, ly, a.target, out)
+    msg = f"Pointing at '{a.target}' on {out['name']} at ({gx:.0f}, {gy:.0f})."
+    if not (a.click or a.double or a.right or a.type):
+        return msg
+    click(gx, gy, "right" if a.right else "left", a.double)
+    if a.type:
+        type_text(a.type)
+    return msg + (" Clicked and typed." if a.type else " Clicked.") + focus()
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="lop-screen", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("point", help="find TARGET on the focused monitor and point at it (optionally click/type)")
+    p.add_argument("target")
+    p.add_argument("--click", action="store_true")
+    p.add_argument("--double", action="store_true", help="double-click")
+    p.add_argument("--right", action="store_true", help="right-click")
+    p.add_argument("--type", metavar="TEXT", help="click it, then type TEXT")
+    sub.add_parser("type", help="type text into the focused window").add_argument("text")
+    sub.add_parser("press", help="press a key or chord, e.g. Return, ctrl+l").add_argument("key")
+    sub.add_parser("stop", help="remove the pointer overlay")
+    a = ap.parse_args()
+    try:
+        if a.cmd == "point":
+            print(cmd_point(a))
+        elif a.cmd == "type":
+            type_text(a.text)
+            print("Typed." + focus())
+        elif a.cmd == "press":
+            press(a.key)
+            print(f"Pressed {a.key}." + focus())
+        else:
+            stop_overlay()
+            print("Overlay stopped.")
+    except (Fail, subprocess.TimeoutExpired, OSError) as e:
+        sys.exit(f"ERROR: {e}")
+
+
+if __name__ == "__main__":
+    main()

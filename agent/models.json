@@ -6,38 +6,24 @@
           "contextWindow": 131072,
           "maxTokens": 32768
         },
-        "ling3-expq4k": {
-          "contextWindow": 131072,
-          "maxTokens": 32768
-        },
-        "qwen3.5-0.8b": {
-          "contextWindow": 80000,
-          "maxTokens": 32768,
-          "reasoning": false
-        },
-        "qwen3.5-2b": {
-          "contextWindow": 122880,
-          "maxTokens": 32768,
-          "reasoning": false
-        },
-        "sharp-minicpm5": {
-          "contextWindow": 80000,
-          "maxTokens": 32768
-        },
         "lfm2.5-24b": {
           "contextWindow": 65536,
           "maxTokens": 16384
         },
-        "bonsai2-2b-ptq1": {
+        "bonsai2-9b-ptq1": {
+          "contextWindow": 98304,
+          "maxTokens": 32768
+        },
+        "lfm3": {
           "contextWindow": 131072,
           "maxTokens": 32768
         },
-        "bonsai2-4b-ptq1": {
-          "contextWindow": 122880,
-          "maxTokens": 32768
+        "lfm3-vl": {
+          "contextWindow": 12288,
+          "maxTokens": 4096
         },
-        "bonsai2-9b-ptq1": {
-          "contextWindow": 98304,
+        "spark-x2.6-1.7b": {
+          "contextWindow": 131072,
           "maxTokens": 32768
         }
       }
