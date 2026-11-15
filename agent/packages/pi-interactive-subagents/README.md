@@ -166,6 +166,11 @@ Spawns must name a known agent at **every** depth. A top-level session may spawn
 
 Extensions can register additional tools for sub-agents at runtime via `registerToolExtension(name, path)` on the `__pi_interactive_subagents` process global.
 
+Two more knobs for restricted sub-agents:
+
+- `<agent dir>/subagent-extensions.txt`: extensions every tool-restricted sub-agent loads on top of the ones behind its tools, one path per line (`#` comments, `~/` allowed). For extensions without tools, such as a transcript renderer.
+- `PI_SUBAGENT_ENV`: environment variables a sub-agent inherits from the spawner (names or `PREFIX*`, comma or space separated). A tmux pane gets tmux's environment, not the spawner's, so a launcher that configures its extensions through env lists those variables here (e.g. `PI_SUBAGENT_ENV='OP_*'`).
+
 ## Role folders
 
 `cwd` starts a sub-agent in a directory with its own config, so role-specific setups (CLAUDE.md, skills, extensions) apply:

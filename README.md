@@ -7,6 +7,9 @@ pi-operator repo runs pi with `PI_CODING_AGENT_DIR=~/.pi/agent`.
 - `agent/SYSTEM.md`: the system prompt template (`{{tools}}`, `{{rules}}`, `{{addendum}}`... filled each turn).
 - `agent/extensions.txt`: extra extensions loaded with `-e` (custom header, subagents, trace, prompt snippets,
   ask-user-question, rewind, web search and fetch); their copies are in `agent/extensions` and `agent/packages`.
+- `agent/agents`: subagent definitions that override the bundled ones. `researcher` also has the browser tools, which
+  pi-operator registers with the subagents launcher (its `extensions/browser/subagent.ts`: browser, gate, STOP).
+- `agent/subagent-extensions.txt`: extensions every subagent loads on top of the ones behind its tools (trace).
 - `agent/skills`: skills the operator loads besides its own.
 - `agent/settings.json`, `agent/models.json`: pi settings and the local model router.
 - `settings.json`: operator and voice settings (`/operator-settings`, `/voice-settings`).

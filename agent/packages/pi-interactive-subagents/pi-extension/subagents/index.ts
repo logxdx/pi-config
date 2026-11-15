@@ -243,6 +243,49 @@ function getProviderExtension(model: string): string | undefined {
 }
 
 /**
+ * Extensions every tool-restricted subagent loads besides those behind its
+ * tools: `<agent dir>/subagent-extensions.txt`, one path per line (`#`
+ * comments, `~/` allowed; missing files are skipped). Meant for extensions
+ * that add no tools, such as a transcript renderer. Unrestricted (fork)
+ * children discover the global extensions themselves and don't need them.
+ */
+function getExtraSubagentExtensions(): string[] {
+  const file = join(getAgentConfigDir(), "subagent-extensions.txt");
+  if (!existsSync(file)) return [];
+  const paths: string[] = [];
+  for (const raw of readFileSync(file, "utf8").split("\n")) {
+    let line = raw.replace(/#.*$/, "").trim();
+    if (!line) continue;
+    if (line.startsWith("~/")) line = join(homedir(), line.slice(2));
+    if (existsSync(line)) paths.push(line);
+  }
+  return paths;
+}
+
+/**
+ * Environment the subagent inherits from this process. A subagent's tmux pane
+ * gets tmux's environment, not ours, so a launcher that sets variables its
+ * extensions read (e.g. pi-operator's OP_*) lists them in PI_SUBAGENT_ENV:
+ * names or `PREFIX*` patterns, separated by commas or spaces. The variables
+ * this extension sets itself (PI_SUBAGENT_*, PI_CODING_AGENT_DIR) are never
+ * taken from it; PI_SUBAGENT_ENV itself is passed on for nested spawns.
+ */
+function forwardedEnvParts(): string[] {
+  const spec = process.env.PI_SUBAGENT_ENV?.trim();
+  if (!spec) return [];
+  const patterns = spec.split(/[\s,]+/).filter(Boolean);
+  const matches = (key: string) =>
+    patterns.some((p) => (p.endsWith("*") ? key.startsWith(p.slice(0, -1)) : key === p));
+  const parts = [`PI_SUBAGENT_ENV=${shellEscape(spec)}`];
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (key.startsWith("PI_SUBAGENT_") || key === "PI_CODING_AGENT_DIR") continue;
+    if (matches(key)) parts.push(`${key}=${shellEscape(value)}`);
+  }
+  return parts;
+}
+
+/**
  * When this process was spawned as a restricted subagent, the parent pins the
  * set of agents it may itself spawn via PI_SUBAGENT_ALLOWED. `null` means no
  * restriction (top-level session, or an unrestricted child).
@@ -881,6 +924,7 @@ function applySandboxToParts(
     }
     const providerExt = loadout.model ? getProviderExtension(loadout.model) : undefined;
     if (providerExt) extPaths.add(providerExt);
+    for (const extPath of getExtraSubagentExtensions()) extPaths.add(extPath);
     for (const extPath of extPaths) {
       parts.push("-e", shellEscape(extPath));
     }
@@ -1376,8 +1420,9 @@ async function launchSubagent(
   // the shared helper (same code path resume uses — they can't drift).
   applySandboxToParts(parts, loadout, { artifactDir, name: params.name });
 
-  // Build env prefix: subagent identity + config dir propagation + spawn allowlist
-  const envParts: string[] = [];
+  // Build env prefix: forwarded env first (later assignments win), then subagent
+  // identity + config dir propagation + spawn allowlist
+  const envParts: string[] = forwardedEnvParts();
 
   if (resolvedAgentDir) {
     envParts.push(`PI_CODING_AGENT_DIR=${shellEscape(resolvedAgentDir)}`);
@@ -2207,7 +2252,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         // Build env prefix — replay the snapshot's config dir + spawn whitelist
         // so the resumed process resolves the same agents/extensions and keeps
         // the same nested-spawn restriction it originally ran with.
-        const resumeEnvParts: string[] = [];
+        const resumeEnvParts: string[] = forwardedEnvParts();
         const resumeAgentDir = loadout.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? null;
         if (resumeAgentDir) {
           resumeEnvParts.push(`PI_CODING_AGENT_DIR=${shellEscape(resumeAgentDir)}`);

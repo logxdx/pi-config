@@ -1,0 +1,3 @@
+# Extensions every subagent loads (pi-interactive-subagents starts subagents with --no-extensions plus the extensions
+# behind their tools; these come on top). One path per line, ~ allowed. For extensions that add no tools.
+~/.pi/agent/extensions/trace/index.ts
